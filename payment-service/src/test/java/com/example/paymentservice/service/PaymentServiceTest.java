@@ -56,7 +56,7 @@ class PaymentServiceTest {
         assertNotNull(response);
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
-        assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
+        assertEquals(new BigDecimal("100.00"), response.getPaymentAmount());
         assertEquals(Currency.EUR, response.getCurrency());
         assertEquals(PaymentStatus.APPROVED, response.getStatus());
         verify(paymentRepository).findById("PAY-001");
@@ -84,7 +84,7 @@ class PaymentServiceTest {
         assertNotNull(response);
         assertEquals("PAY-003", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
-        assertEquals(new BigDecimal("150.00"), response.getTotalAmount());
+        assertEquals(new BigDecimal("150.00"), response.getPaymentAmount());
         assertEquals(Currency.EUR, response.getCurrency());
         assertEquals(PaymentStatus.APPROVED, response.getStatus());
         verify(paymentRepository).save(any(Payment.class));

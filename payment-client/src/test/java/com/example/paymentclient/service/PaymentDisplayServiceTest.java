@@ -68,7 +68,7 @@ class PaymentDisplayServiceTest {
 
         assertNotNull(result);
         assertEquals("PAY-001", result.getId());
-        assertEquals(new BigDecimal("100.00"), result.getTotalAmount());
+        assertEquals(new BigDecimal("100.00"), result.getPaymentAmount());
         verify(paymentClient).getPayment("PAY-001");
     }
 }
