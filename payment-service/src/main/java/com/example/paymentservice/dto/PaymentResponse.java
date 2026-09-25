@@ -18,7 +18,7 @@ public class PaymentResponse {
     private String customerId;
 
     @Schema(description = "Payment amount", example = "150.00", requiredMode = Schema.RequiredMode.REQUIRED)
-    private BigDecimal paymentAmount;
+    private BigDecimal totalAmount;
 
     @Schema(description = "Payment currency", example = "EUR", requiredMode = Schema.RequiredMode.REQUIRED)
     private Currency currency;
@@ -29,10 +29,10 @@ public class PaymentResponse {
     public PaymentResponse() {
     }
 
-    public PaymentResponse(String id, String customerId, BigDecimal paymentAmount, Currency currency, PaymentStatus status) {
+    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, Currency currency, PaymentStatus status) {
         this.id = id;
         this.customerId = customerId;
-        this.paymentAmount = paymentAmount;
+        this.totalAmount = totalAmount;
         this.currency = currency;
         this.status = status;
     }
@@ -63,12 +63,12 @@ public class PaymentResponse {
         this.customerId = customerId;
     }
 
-    public BigDecimal getPaymentAmount() {
-        return paymentAmount;
+    public BigDecimal getTotalAmount() {
+        return totalAmount;
     }
 
-    public void setPaymentAmount(BigDecimal paymentAmount) {
-        this.paymentAmount = paymentAmount;
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
     }
 
     public Currency getCurrency() {
@@ -94,14 +94,14 @@ public class PaymentResponse {
         PaymentResponse that = (PaymentResponse) o;
         return Objects.equals(id, that.id) &&
                 Objects.equals(customerId, that.customerId) &&
-                Objects.equals(paymentAmount, that.paymentAmount) &&
+                Objects.equals(totalAmount, that.totalAmount) &&
                 currency == that.currency &&
                 status == that.status;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, customerId, paymentAmount, currency, status);
+        return Objects.hash(id, customerId, totalAmount, currency, status);
     }
 
     @Override
@@ -109,7 +109,7 @@ public class PaymentResponse {
         return "PaymentResponse{" +
                 "id='" + id + '\'' +
                 ", customerId='" + customerId + '\'' +
-                ", paymentAmount=" + paymentAmount +
+                ", totalAmount=" + totalAmount +
                 ", currency=" + currency +
                 ", status=" + status +
                 '}';

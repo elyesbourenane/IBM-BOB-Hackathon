@@ -49,7 +49,7 @@ class PaymentControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id", notNullValue()))
                 .andExpect(jsonPath("$.customerId", is("CUST-123")))
-                .andExpect(jsonPath("$.paymentAmount", is(150.00)))
+                .andExpect(jsonPath("$.totalAmount", is(150.00)))
                 .andExpect(jsonPath("$.currency", is("EUR")))
                 .andExpect(jsonPath("$.status", is("APPROVED")));
     }
@@ -71,7 +71,7 @@ class PaymentControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id", notNullValue()))
                 .andExpect(jsonPath("$.customerId", is("CUST-456")))
-                .andExpect(jsonPath("$.paymentAmount", is(299.99)))
+                .andExpect(jsonPath("$.totalAmount", is(299.99)))
                 .andExpect(jsonPath("$.currency", is("USD")))
                 .andExpect(jsonPath("$.status", is("APPROVED")));
     }
@@ -201,7 +201,7 @@ class PaymentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is("PAY-001")))
                 .andExpect(jsonPath("$.customerId", is("CUST-123")))
-                .andExpect(jsonPath("$.paymentAmount", is(100.00)))
+                .andExpect(jsonPath("$.totalAmount", is(100.00)))
                 .andExpect(jsonPath("$.currency", is("EUR")))
                 .andExpect(jsonPath("$.status", is("APPROVED")));
     }
