@@ -22,6 +22,7 @@ from typing import Any
 
 from .comparator import Comparator
 from .config import load_config, ContractGuardConfig, DependencyConfig
+from .impact import ConsumerImpact, scan_consumer_impact
 from .models import ComparisonReport, Finding
 
 
@@ -41,6 +42,7 @@ class ConsumerResult:
     verdict: str
     findings: list[Finding] = field(default_factory=list)
     error: str | None = None  # set when the comparison itself failed
+    impacts: list[ConsumerImpact] = field(default_factory=list)
 
 
 @dataclass
@@ -55,6 +57,7 @@ class DiscoveryReport:
     affected_consumers: list[str]        # subset that broke or errored
     results: list[ConsumerResult]        # one entry per (consumer, dependency) pair
     breaking_findings: list[dict[str, Any]]  # flat list of all breaking findings
+    impacts: list[ConsumerImpact] = field(default_factory=list)
 
     @property
     def summary(self) -> str:
@@ -151,6 +154,19 @@ def discover_and_check(
                 report: ComparisonReport = Comparator(
                     dep.producer_contract, dep.consumer_contract
                 ).compare()
+                impacts: list[ConsumerImpact] = []
+                for f in report.findings:
+                    if f.is_breaking:
+                        impacts.append(
+                            scan_consumer_impact(
+                                consumer_dir=config.base_dir,
+                                consumer_service=config.service,
+                                producer_service=dep.service,
+                                consumer_contract=dep.consumer_contract,
+                                producer_contract=dep.producer_contract,
+                                finding=f,
+                            )
+                        )
                 all_results.append(
                     ConsumerResult(
                         consumer_service=config.service,
@@ -160,6 +176,7 @@ def discover_and_check(
                         is_compatible=report.is_compatible,
                         verdict=report.verdict,
                         findings=report.findings,
+                        impacts=impacts,
                     )
                 )
             except (FileNotFoundError, ValueError, KeyError) as exc:
@@ -193,7 +210,9 @@ def discover_and_check(
     affected_consumers = [c for c in consumers_checked if c in affected_set]
 
     breaking_findings: list[dict[str, Any]] = []
+    all_impacts: list[ConsumerImpact] = []
     for r in all_results:
+        all_impacts.extend(r.impacts)
         for f in r.findings:
             if f.is_breaking:
                 breaking_findings.append({
@@ -211,4 +230,5 @@ def discover_and_check(
         affected_consumers=affected_consumers,
         results=all_results,
         breaking_findings=breaking_findings,
+        impacts=all_impacts,
     )

@@ -1,246 +1,327 @@
-# contract-guard
+# ContractGuard
 
-A **deterministic** OpenAPI contract compatibility checker. Compare a producer OpenAPI YAML contract against a consumer OpenAPI YAML contract and get a clear, rule-based verdict — no AI, no guesswork.
+> **"Your API changed. Did every consumer change with it?"**  
+> **"AI reasons. Deterministic checks decide. Bob executes. Evidence proves."**
 
-Exposes a **CLI** for local use and an **MCP server** so AI coding agents like IBM Bob can call it automatically during development workflows.
-
----
-
-## Features
-
-| Rule | Severity |
-|---|---|
-| Field removed from producer response | **Breaking** |
-| Field renamed / replaced in producer response | **Breaking** |
-| Field type changed | **Breaking** |
-| Optional field made required | **Breaking** |
-| New optional field added | Compatible |
+ContractGuard is a deterministic API contract compatibility engine, blast-radius analyzer, and release verification gate for modern microservice architectures. Built for the **IBM Bob 2.0 Hackathon**, ContractGuard empowers autonomous coding agents (like IBM Bob) to detect breaking API changes across multiple independent consumer repositories, explain the impact with Mistral AI, execute verified repairs, and produce reproducible release evidence.
 
 ---
 
-## Requirements
+## Architecture & Principles
 
+ContractGuard strictly enforces separation of concerns between deterministic logic, AI reasoning, and agent execution:
+
+```
+                            ┌──────────────────────────────────────────────┐
+                            │               API Contract Change            │
+                            └──────────────────────┬───────────────────────┘
+                                                   │
+                                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ DETERMINISTIC ENGINE (ContractGuard Core)                                                       │
+│  - Multi-repo Consumer Discovery (contractguard.yaml)                                           │
+│  - OpenAPI 3.x AST Comparison & Rule Evaluation                                                 │
+│  - Verdict Decision (BREAKING vs COMPATIBLE)                                                    │
+│  - Blast-Radius File Inspection (Confirmed vs Likely Source & Test Files)                       │
+└──────────────────────────────────┬──────────────────────────────────────────────────────────────┘
+                                   │ Findings & Minimal Context
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ AI REASONING LAYER (Mistral AI via LLMProvider Abstraction)                                     │
+│  - Explains what changed & why it breaks downstream consumers                                   │
+│  - Distinguishes CONFIRMED facts from INFERRED impacts                                          │
+│  - Generates Step-by-Step Advisory Repair Plan & Backward-Compatible Migration Options         │
+│  - Never overrides deterministic verdicts                                                       │
+└──────────────────────────────────┬──────────────────────────────────────────────────────────────┘
+                                   │ Structured MCP Response (JSON-RPC)
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ AUTONOMOUS EXECUTION (IBM Bob via MCP)                                                          │
+│  - Reads structured findings & repair plan                                                      │
+│  - Edits consumer contracts, DTOs, services, and test fixtures                                  │
+│  - Runs test suites locally                                                                     │
+└──────────────────────────────────┬──────────────────────────────────────────────────────────────┘
+                                   │ Re-verify Trigger
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ DETERMINISTIC RELEASE GATE & EVIDENCE                                                           │
+│  - Final Compatibility Check (0 affected consumers required)                                    │
+│  - Release Safety Gate: READY or BLOCKED                                                         │
+│  - Audit Artifacts: contractguard-evidence.json & contractguard-report.md (Stable SHA-256 Hash) │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Deterministic vs. AI Responsibilities
+
+| Responsibility | Deterministic Engine | Mistral AI | IBM Bob |
+|---|:---:|:---:|:---:|
+| Contract parsing & diffing | **Authoritative** | ❌ Forbidden | ❌ |
+| Breaking / Compatible verdict | **Decides** | ❌ Cannot override | ❌ |
+| Consumer discovery & dependency graph | **Authoritative** | ❌ | ❌ |
+| Blast-radius file identification | **Confirmed Facts** | Inferred / Likely | ❌ |
+| Impact explanation & developer rationale | ❌ | **Explains** | ❌ |
+| Advisory repair plan & migration advice | ❌ | **Proposes** | ❌ |
+| Code editing & file modifications | ❌ | ❌ Advisory only | **Executes** |
+| Test suite execution | ❌ | ❌ | **Executes** |
+| Release gate (READY / BLOCKED) | **Decides** | ❌ | ❌ |
+| Reproducible release evidence generation | **Proves** | ❌ | ❌ |
+
+---
+
+## Why Tests Alone Are Insufficient
+
+A major vulnerability in modern microservices is that **consumer tests can pass green while an inter-service contract is completely broken**.
+
+In microservice client repositories (such as `payment-client`), HTTP interactions are typically mocked using frameworks like Spring's `MockRestServiceServer` or WireMock. When a producer changes a response field (e.g., `paymentAmount` → `totalAmount`):
+1. Consumer unit and integration tests continue asserting against hardcoded JSON fixtures expecting `paymentAmount`.
+2. The consumer test suite **passes 100% green**.
+3. In production, real HTTP responses contain `totalAmount`. Jackson/JSON deserializers fail silently or throw exceptions, causing immediate service outages.
+
+**ContractGuard catches this incompatibility statically at the contract level without needing to boot or run live services.**
+
+---
+
+## Workspace Layout
+
+ContractGuard works across independent repositories:
+
+```
+IBM BOB HACKATHON/
+├── contract-guard/           # Python engine, CLI, MCP Server, Evidence Generator
+├── payment-service/          # Producer service (Java/Spring Boot, docs/openapi.yaml)
+├── payment-client/           # Consumer service (Java/Spring Boot, contracts/payment-service.yaml)
+├── order-service/            # Lightweight consumer (contracts/payment-service.yaml)
+└── reporting-service/        # Lightweight consumer (contracts/payment-service.yaml)
+```
+
+Each consumer repository declares its dependencies in `contractguard.yaml`:
+```yaml
+service: payment-client
+
+dependencies:
+  - service: payment-service
+    consumer_contract: contracts/payment-service.yaml
+    producer_contract: ../payment-service/docs/openapi.yaml
+```
+
+---
+
+## Installation & Setup
+
+### Requirements
 - Python 3.9+
-- [PyYAML](https://pyyaml.org/) (only runtime dependency)
+- JDK 21 & Maven 3.9+ (for running Java consumer/producer services)
 
----
-
-## Installation
-
+### Setup ContractGuard
 ```bash
-# Clone the repo
-git clone <repo-url>
 cd contract-guard
 
-# Create a virtual environment (recommended)
+# Create and activate virtual environment
 python -m venv .venv
-.venv\Scripts\activate      # Windows
-# source .venv/bin/activate  # macOS / Linux
+.venv\Scripts\activate       # Windows
+# source .venv/bin/activate   # macOS / Linux
 
-# Install in editable mode
-pip install -e .
-
-# Install with dev extras (pytest)
+# Install dependencies and package in editable mode
 pip install -e ".[dev]"
 ```
 
----
-
-## CLI usage
-
-```bash
-python -m contract_guard compare <producer.yaml> <consumer.yaml>
-```
-
-### Demo scenario
-
-The `contracts/` directory contains a ready-made example where the producer renamed `amount` → `paymentAmount`:
-
-```bash
-python -m contract_guard compare contracts/producer.yaml contracts/consumer.yaml --no-color
-```
-
-Expected output:
-
-```
-[!!] BREAKING
-
-Breaking changes:
-  Endpoint    : GET /api/payments/{id}
-  Field       : amount
-  Change      : field_renamed
-  Detail      : Consumer expects 'amount' but producer now uses 'paymentAmount' (same type 'number').
-  Reason      : Consumer expects the old field name; renaming it is equivalent to removal.
-```
-
-### Exit codes
-
-| Code | Meaning |
-|---|---|
-| `0` | All changes are compatible |
-| `1` | At least one breaking change detected |
-| `2` | Input error (file not found, invalid YAML, etc.) |
-
-### Options
-
-```
---no-color    Disable ANSI colour output (useful for CI logs)
-```
-
----
-
-## Running tests
-
-```bash
-pytest
-# With coverage
-pytest --cov=contract_guard --cov-report=term-missing
-```
-
----
-
-## MCP server
-
-`contract-guard` ships a built-in MCP stdio server. When registered with IBM Bob, it exposes the
-`compare_contracts` tool so Bob can check contract compatibility automatically — for example,
-when you ask it to review an API change or generate a compatibility report.
-
-### What the tool does
-
-**Tool name:** `compare_contracts`
-
-**Inputs:**
-| Parameter | Type | Description |
-|---|---|---|
-| `producer_path` | string | Absolute path to the producer OpenAPI YAML file |
-| `consumer_path` | string | Absolute path to the consumer OpenAPI YAML file |
-
-**Output:** a JSON object with:
-```jsonc
-{
-  "verdict": "breaking",          // "breaking" or "compatible"
-  "is_compatible": false,
-  "breaking_count": 1,
-  "compatible_count": 0,
-  "findings": [
-    {
-      "endpoint": "GET /api/payments/{id}",
-      "affected_field": "amount",
-      "change_kind": "field_renamed",
-      "severity": "breaking",
-      "detail": "Consumer expects 'amount' but producer now uses 'paymentAmount' (same type 'number').",
-      "reason": "Consumer expects the old field name; renaming it is equivalent to removal."
-    }
-  ]
-}
-```
-
-### Connecting to IBM Bob
-
-#### Step 1 — find the Python executable path
-
-The server is a Python stdio process. You need the absolute path to the Python interpreter that
-has `contract-guard` installed.
+### Environment Variables
+Configure Mistral AI for impact analysis (optional — ContractGuard works 100% deterministically without an API key):
 
 ```bash
 # Windows (PowerShell)
-(Get-Command python).Source
+$env:MISTRAL_API_KEY="your-mistral-api-key"
+$env:MISTRAL_MODEL="mistral-small-latest"     # Optional: defaults to mistral-small-latest
+$env:MISTRAL_API_BASE="https://api.mistral.ai/v1" # Optional
+$env:MISTRAL_TIMEOUT="30.0"                  # Optional
 
-# macOS / Linux
-which python
-# or, if using a venv:
-which .venv/bin/python
+# Linux / macOS
+export MISTRAL_API_KEY="your-mistral-api-key"
+export MISTRAL_MODEL="mistral-small-latest"
 ```
 
-#### Step 2 — register in Bob's MCP config
+> **Security Note:** If `MISTRAL_API_KEY` is not set, ContractGuard functions normally in deterministic mode. AI features return a clean `"AI analysis unavailable"` status. Secrets are never logged or exported in evidence reports.
 
-Open **Bob → Settings → MCP Servers** and add a new entry, or edit `mcp.json` directly.
+---
 
-**Workspace-scoped** (`<your-project>/.bob/mcp.json`):
+## CLI Usage
+
+ContractGuard provides readable CLI commands for developers and live hackathon demos:
+
+### 1. Consumer Discovery & Blast Radius
+Scan the entire workspace for all declared consumers, compare contracts, and inspect affected files:
+```bash
+contract-guard discover ..
+```
+
+Output:
+```
+[!!] 3/3 CONSUMERS AFFECTED BY CONTRACT DRIFT
+
+  Workspace Root    : D:\Code\IBM BOB Hackathon
+  Configs Discovered: 3
+  Consumers Checked : order-service, payment-client, reporting-service
+  Compatible        : None
+  Affected          : order-service, payment-client, reporting-service
+
+Deterministic Blast Radius & Impact Analysis:
+
+  Consumer  : payment-client
+  Contract  : contracts/payment-service.yaml
+  Endpoint  : GET /api/payments/{id}
+  Field     : paymentAmount (field_renamed)
+  Detail    : Consumer expects 'paymentAmount' but producer now uses 'totalAmount'
+    Confirmed Affected Source Files:
+      - src/main/java/com/example/paymentclient/model/PaymentResponse.java
+      - src/main/java/com/example/paymentclient/service/PaymentDisplayService.java
+    Confirmed Affected Test Files:
+      - src/test/java/com/example/paymentclient/client/PaymentClientTest.java
+      - src/test/java/com/example/paymentclient/model/PaymentResponseSerializationTest.java
+      - src/test/java/com/example/paymentclient/service/PaymentDisplayServiceTest.java
+    Likely Affected Source Files:
+      - src/main/java/com/example/paymentclient/client/PaymentClient.java
+```
+
+### 2. AI Impact Explanation & Repair Plan
+Execute deterministic discovery and invoke Mistral AI for a structured explanation and advisory repair plan:
+```bash
+contract-guard analyze ..
+```
+
+### 3. Release Safety Gate
+Evaluate whether changes are safe to release (`READY` vs `BLOCKED`):
+```bash
+contract-guard verify .. --producer payment-service --test-status PASS
+```
+
+### 4. Release Evidence Generation
+Generate machine-readable audit artifacts (`contractguard-evidence.json` and `contractguard-report.md`):
+```bash
+contract-guard evidence .. --producer payment-service --output-dir ./release-evidence
+```
+
+### 5. Pairwise Comparison & Config Check
+```bash
+contract-guard compare ../payment-service/docs/openapi.yaml ../payment-client/contracts/payment-service.yaml
+contract-guard check ../payment-client/contractguard.yaml
+```
+
+---
+
+## IBM Bob MCP Integration
+
+ContractGuard runs an MCP (Model Context Protocol) stdio server over JSON-RPC 2.0. IBM Bob connects to this server to discover consumers, analyze impact, execute repairs, and verify release readiness.
+
+### Available MCP Tools
+
+| Tool | Purpose | Key Inputs |
+|---|---|---|
+| `compare_contracts` | Pairwise comparison between two OpenAPI YAML files | `producer_path`, `consumer_path` |
+| `read_contractguard_config` | Parse a single `contractguard.yaml` and resolve paths | `config_path` |
+| `discover_and_check_consumers` | Recursive workspace discovery and blast radius calculation | `workspace_root`, `producer_filter` |
+| `analyze_contract_impact` | Discovery + deterministic blast radius + Mistral AI repair plan | `workspace_root`, `producer_filter` |
+| `verify_release_safety` | Release gate verification (`READY`/`BLOCKED`) and evidence generation | `workspace_root`, `producer_service`, `test_status`, `output_dir` |
+
+### Registering with IBM Bob
+
+Add ContractGuard to `.bob/mcp.json` or your global Bob configuration:
 
 ```json
 {
   "mcpServers": {
     "contract-guard": {
-      "command": "C:/path/to/python",
-      "args": ["-m", "contract_guard.mcp_server"]
+      "command": "C:/path/to/contract-guard/.venv/Scripts/python.exe",
+      "args": ["-m", "contract_guard.mcp_server"],
+      "env": {
+        "MISTRAL_API_KEY": "your-mistral-api-key"
+      }
     }
   }
 }
 ```
 
-**Globally-scoped** (`%APPDATA%\Bob\mcp.json` on Windows, `~/.config/bob/mcp.json` on Linux/macOS):
+---
 
-```json
-{
-  "mcpServers": {
-    "contract-guard": {
-      "command": "/path/to/python",
-      "args": ["-m", "contract_guard.mcp_server"]
-    }
-  }
-}
+## Hackathon Demo Scenario (2–3 Minute Flow)
+
+### 1. Baseline State
+All 3 consumers (`payment-client`, `order-service`, `reporting-service`) expect `paymentAmount`.
+```bash
+contract-guard discover ..
+# Output: [OK] ALL CONSUMERS COMPATIBLE (3/3)
+contract-guard verify ..
+# Output: [OK] READY FOR RELEASE
 ```
 
-> **Note:** use the Python interpreter from the virtualenv where `contract-guard` is installed,
-> not the system Python, unless you installed it globally.
+### 2. Breaking API Change
+In `payment-service/docs/openapi.yaml`, the producer renames `paymentAmount` to `totalAmount`:
+```yaml
+# Before:
+required: [id, paymentAmount, currency, status]
+properties:
+  paymentAmount: { type: number, format: double }
 
-> **Windows note:** use forward slashes or escaped backslashes in the path:
-> `"C:/Users/you/.venv/Scripts/python.exe"` or `"C:\\Users\\you\\.venv\\Scripts\\python.exe"`.
+# After:
+required: [id, totalAmount, currency, status]
+properties:
+  totalAmount: { type: number, format: double }
+```
 
-#### Step 3 — verify the connection
+### 3. Consumer Tests Pass Green (The Trap)
+Run tests in `payment-client`:
+```bash
+cd ../payment-client && mvn test
+```
+**Tests pass green!** The mock HTTP tests do not catch the break.
 
-After saving, Bob hot-reloads the server. You should see **contract-guard** appear as connected
-in Bob's MCP panel. You can then ask Bob:
+### 4. ContractGuard Catches the Drift
+```bash
+contract-guard discover ..
+# Output: [!!] 3/3 CONSUMERS AFFECTED
+contract-guard verify ..
+# Output: [BLOCKED] RELEASE BLOCKED
+```
 
-> "Check whether `contracts/producer.yaml` is compatible with `contracts/consumer.yaml`"
+### 5. AI Impact Analysis via Bob
+Bob calls `analyze_contract_impact` through MCP and receives:
+- Exact confirmed broken files (`PaymentResponse.java`, `PaymentDisplayService.java`)
+- Test files needing updates (`PaymentClientTest.java`, `PaymentResponseSerializationTest.java`, `PaymentDisplayServiceTest.java`)
+- Advisory 7-step repair plan.
 
-Bob will call `compare_contracts` with the resolved absolute paths and return the structured report.
+### 6. Bob Executes Repairs
+Bob updates:
+1. `contracts/payment-service.yaml` in `payment-client`, `order-service`, and `reporting-service` to `totalAmount`.
+2. `PaymentResponse.java` (`@JsonProperty("totalAmount")`, `private BigDecimal totalAmount`).
+3. Getter/setter in `PaymentResponse.java` and usages in `PaymentDisplayService.java`.
+4. Test fixtures in `PaymentClientTest.java`, `PaymentResponseSerializationTest.java`, `PaymentDisplayServiceTest.java`.
 
-### Running the server manually (for debugging)
+### 7. Re-verify & Release Evidence
+```bash
+# Deterministic re-check:
+contract-guard discover ..
+# Output: [OK] ALL CONSUMERS COMPATIBLE (3/3)
+
+# Deterministic release gate:
+contract-guard verify ..
+# Output: [OK] READY FOR RELEASE
+
+# Generate reproducible evidence:
+contract-guard evidence .. --output-dir ./release-evidence
+```
+
+The generated `contractguard-evidence.json` contains a stable SHA-256 evidence hash (`cg-ev-...`) certifying that all 3 downstream consumers were verified and are backward-compatible.
+
+---
+
+## Testing
+
+Run the comprehensive test suite (81 passing tests, completely independent of external network or API keys):
 
 ```bash
-# Start the server — it listens on stdin and replies on stdout
-python -m contract_guard.mcp_server
-
-# Feed a raw JSON-RPC exchange (one message per line):
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"test","version":"0"},"capabilities":{}}}' | python -m contract_guard.mcp_server
+pytest
 ```
 
-All server-side diagnostics go to **stderr**, not stdout, so they never corrupt the protocol channel.
-
----
-
-## Project structure
-
+Run with coverage:
+```bash
+pytest --cov=contract_guard --cov-report=term-missing
 ```
-contract-guard/
-├── contracts/
-│   ├── producer.yaml        # Demo producer contract (v2, uses paymentAmount)
-│   └── consumer.yaml        # Demo consumer contract (v1, expects amount)
-├── src/
-│   └── contract_guard/
-│       ├── __init__.py
-│       ├── __main__.py      # CLI entry point
-│       ├── mcp_server.py    # MCP stdio server (JSON-RPC 2.0, no extra deps)
-│       ├── models.py        # Data classes: Finding, ComparisonReport
-│       ├── loader.py        # YAML loading + $ref resolution
-│       ├── extractor.py     # OpenAPI -> flat property map
-│       ├── rules.py         # Pure compatibility rule functions
-│       └── comparator.py    # Orchestrates loading + rules
-├── tests/
-│   ├── test_rules.py        # Unit tests for each rule
-│   └── test_comparator.py  # Integration tests using temp YAML files
-├── pyproject.toml
-└── README.md
-```
-
----
-
-## Architecture decisions
-
-- **Deterministic rules only** — every verdict is traceable to a specific rule function in `rules.py`.
-- **Rename heuristic** — when a consumer field is absent from the producer but a producer field of the same type is absent from the consumer (with no ambiguity), it is classified as a rename rather than an independent removal + addition. This keeps noise low.
-- **Flat property map** — `extractor.flatten_properties()` walks nested object schemas and produces a dot-separated field path map, making rule functions simple key-set operations.
-- **Minimal dependencies** — only PyYAML at runtime; zero extra deps for the MCP server (raw JSON-RPC 2.0 over stdio).
-- **Thin MCP layer** — `mcp_server.py` is a pure protocol adapter. It calls `Comparator.compare()` and serialises the result. No AI logic lives here.

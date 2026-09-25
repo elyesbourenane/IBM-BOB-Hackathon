@@ -9,6 +9,7 @@ description = "Deterministic OpenAPI contract compatibility checker"
 requires-python = ">=3.9"
 dependencies = [
     "pyyaml>=6.0",
+    "pydantic>=2.0",
 ]
 
 [project.scripts]
