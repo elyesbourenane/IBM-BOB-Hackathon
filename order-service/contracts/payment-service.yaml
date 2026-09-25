@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: Payment Service Consumer Contract — order-service
+  description: Fields required by order-service when calling payment-service
+  version: 1.0.0
+paths:
+  /api/payments/{id}:
+    get:
+      summary: Retrieve payment details for order processing
+      operationId: getPaymentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: PAY-001
+      responses:
+        '200':
+          description: Payment response used by order-service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+components:
+  schemas:
+    PaymentResponse:
+      type: object
+      required:
+        - id
+        - paymentAmount
+        - status
+      properties:
+        id:
+          type: string
+          description: Payment identifier
+          example: PAY-001
+        paymentAmount:
+          type: number
+          format: double
+          description: Payment amount used to confirm order total
+          example: 99.99
+        status:
+          type: string
+          description: Payment status used to gate order fulfilment
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+          example: APPROVED

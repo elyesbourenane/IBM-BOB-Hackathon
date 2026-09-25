@@ -1,0 +1,6 @@
+service: order-service
+
+dependencies:
+  - service: payment-service
+    consumer_contract: contracts/payment-service.yaml
+    producer_contract: ../payment-service/docs/openapi.yaml

@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Payment Service API
+  description: REST API for processing and retrieving payments
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /api/payments:
+    post:
+      summary: Create a new payment
+      description: Creates a payment with customerId, amount, and currency
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '201':
+          description: Payment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Invalid payment request payload
+  /api/payments/{id}:
+    get:
+      summary: Get payment by ID
+      description: Retrieves payment details by unique identifier
+      operationId: getPaymentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payment identifier
+          schema:
+            type: string
+            example: PAY-001
+      responses:
+        '200':
+          description: Payment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '404':
+          description: Payment not found
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required:
+        - customerId
+        - amount
+        - currency
+      properties:
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST-123
+        amount:
+          type: number
+          format: double
+          description: Payment amount (must be greater than zero)
+          minimum: 0.01
+          example: 150.00
+        currency:
+          type: string
+          description: Payment currency
+          enum:
+            - EUR
+            - USD
+          example: EUR
+    PaymentResponse:
+      type: object
+      required:
+        - id
+        - customerId
+        - paymentAmount
+        - currency
+        - status
+      properties:
+        id:
+          type: string
+          description: Unique payment identifier
+          example: PAY-001
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST-123
+        paymentAmount:
+          type: number
+          format: double
+          description: Payment amount
+          example: 150.00
+        currency:
+          type: string
+          description: Payment currency
+          enum:
+            - EUR
+            - USD
+          example: EUR
+        status:
+          type: string
+          description: Payment status
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+          example: APPROVED

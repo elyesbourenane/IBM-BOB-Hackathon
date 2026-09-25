@@ -1,0 +1,3 @@
+[console_scripts]
+contract-guard = contract_guard.__main__:main
+contract-guard-mcp = contract_guard.mcp_server:main

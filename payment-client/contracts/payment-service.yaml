@@ -1,0 +1,64 @@
+openapi: 3.0.3
+info:
+  title: Payment Service Consumer Contract
+  description: Expected contract specification required by payment-client
+  version: 1.0.0
+paths:
+  /api/payments/{id}:
+    get:
+      summary: Retrieve payment details
+      description: Returns payment information matching consumer requirements
+      operationId: getPaymentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: PAY-001
+      responses:
+        '200':
+          description: Expected payment response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+components:
+  schemas:
+    PaymentResponse:
+      type: object
+      required:
+        - id
+        - customerId
+        - paymentAmount
+        - currency
+        - status
+      properties:
+        id:
+          type: string
+          description: Payment identifier
+          example: PAY-001
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST-123
+        paymentAmount:
+          type: number
+          format: double
+          description: Payment amount
+          example: 100.00
+        currency:
+          type: string
+          description: Currency code
+          enum:
+            - EUR
+            - USD
+          example: EUR
+        status:
+          type: string
+          description: Payment status
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+          example: APPROVED

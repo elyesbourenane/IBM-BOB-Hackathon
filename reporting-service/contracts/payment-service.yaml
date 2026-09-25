@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info:
+  title: Payment Service Consumer Contract — reporting-service
+  description: Fields required by reporting-service when calling payment-service
+  version: 1.0.0
+paths:
+  /api/payments/{id}:
+    get:
+      summary: Retrieve payment details for reporting
+      operationId: getPaymentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: PAY-001
+      responses:
+        '200':
+          description: Payment response used by reporting-service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+components:
+  schemas:
+    PaymentResponse:
+      type: object
+      required:
+        - id
+        - customerId
+        - paymentAmount
+        - currency
+        - status
+      properties:
+        id:
+          type: string
+          description: Payment identifier
+          example: PAY-001
+        customerId:
+          type: string
+          description: Customer identifier used in reports
+          example: CUST-123
+        paymentAmount:
+          type: number
+          format: double
+          description: Payment amount recorded in financial reports
+          example: 250.00
+        currency:
+          type: string
+          description: Currency code for reporting
+          enum:
+            - EUR
+            - USD
+          example: EUR
+        status:
+          type: string
+          description: Payment status for audit trail
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+          example: APPROVED
