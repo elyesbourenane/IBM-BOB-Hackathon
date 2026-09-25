@@ -36,7 +36,7 @@ class PaymentClientTest {
                 {
                     "id": "PAY-001",
                     "customerId": "CUST-123",
-                    "paymentAmount": 100.00,
+                    "totalAmount": 100.00,
                     "currency": "EUR",
                     "status": "APPROVED"
                 }
@@ -52,19 +52,19 @@ class PaymentClientTest {
         assertNotNull(response);
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
-        assertEquals(new BigDecimal("100.00"), response.getPaymentAmount());
+        assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
         assertEquals("EUR", response.getCurrency());
         assertEquals("APPROVED", response.getStatus());
     }
 
     @Test
-    @DisplayName("Should demonstrate consumer expects and parses the paymentAmount field from HTTP response")
+    @DisplayName("Should demonstrate consumer expects and parses the totalAmount field from HTTP response")
     void testConsumerExpectsPaymentAmountFieldFromHttp() {
         String responseBody = """
                 {
                     "id": "PAY-002",
                     "customerId": "CUST-456",
-                    "paymentAmount": 250.00,
+                    "totalAmount": 250.00,
                     "currency": "USD",
                     "status": "PENDING"
                 }
@@ -78,7 +78,7 @@ class PaymentClientTest {
 
         mockServer.verify();
         assertNotNull(response);
-        assertNotNull(response.getPaymentAmount(), "paymentAmount field must be present and parsed by the consumer");
-        assertEquals(new BigDecimal("250.00"), response.getPaymentAmount());
+        assertNotNull(response.getTotalAmount(), "totalAmount field must be present and parsed by the consumer");
+        assertEquals(new BigDecimal("250.00"), response.getTotalAmount());
     }
 }

@@ -8,18 +8,18 @@ import java.util.Objects;
 public class PaymentResponse {
     private String id;
     private String customerId;
-    @JsonProperty("paymentAmount")
-    private BigDecimal paymentAmount;
+    @JsonProperty("totalAmount")
+    private BigDecimal totalAmount;
     private String currency;
     private String status;
 
     public PaymentResponse() {
     }
 
-    public PaymentResponse(String id, String customerId, BigDecimal paymentAmount, String currency, String status) {
+    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, String currency, String status) {
         this.id = id;
         this.customerId = customerId;
-        this.paymentAmount = paymentAmount;
+        this.totalAmount = totalAmount;
         this.currency = currency;
         this.status = status;
     }
@@ -40,12 +40,12 @@ public class PaymentResponse {
         this.customerId = customerId;
     }
 
-    public BigDecimal getPaymentAmount() {
-        return paymentAmount;
+    public BigDecimal getTotalAmount() {
+        return totalAmount;
     }
 
-    public void setPaymentAmount(BigDecimal paymentAmount) {
-        this.paymentAmount = paymentAmount;
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
     }
 
     public String getCurrency() {
@@ -71,14 +71,14 @@ public class PaymentResponse {
         PaymentResponse that = (PaymentResponse) o;
         return Objects.equals(id, that.id) &&
                 Objects.equals(customerId, that.customerId) &&
-                Objects.equals(paymentAmount, that.paymentAmount) &&
+                Objects.equals(totalAmount, that.totalAmount) &&
                 Objects.equals(currency, that.currency) &&
                 Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, customerId, paymentAmount, currency, status);
+        return Objects.hash(id, customerId, totalAmount, currency, status);
     }
 
     @Override
@@ -86,7 +86,7 @@ public class PaymentResponse {
         return "PaymentResponse{" +
                 "id='" + id + '\'' +
                 ", customerId='" + customerId + '\'' +
-                ", paymentAmount=" + paymentAmount +
+                ", totalAmount=" + totalAmount +
                 ", currency='" + currency + '\'' +
                 ", status='" + status + '\'' +
                 '}';
