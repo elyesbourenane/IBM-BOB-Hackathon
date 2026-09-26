@@ -142,9 +142,19 @@ class EvidenceReport:
 
     def compute_stable_hash(self) -> str:
         """
-        Generate a stable, reproducible SHA-256 identifier based on substantive content.
+        Generate a stable, tamper-evident SHA-256 identifier based on substantive content.
         Excludes transient timestamp and self-referential ID.
+        Findings are canonically sorted so the identifier is deterministic across platforms.
         """
+        sorted_findings = sorted(
+            self.findings,
+            key=lambda f: (
+                str(f.get("consumer_service", "")),
+                str(f.get("endpoint", "")),
+                str(f.get("affected_field", "")),
+                str(f.get("change_kind", "")),
+            ),
+        )
         substantive = {
             "version": self.version,
             "producer_service": self.producer_service,
@@ -152,7 +162,7 @@ class EvidenceReport:
             "consumers_checked": sorted(self.consumers_checked),
             "compatible_consumers": sorted(self.compatible_consumers),
             "affected_consumers": sorted(self.affected_consumers),
-            "findings": self.findings,
+            "findings": sorted_findings,
             "deterministic_checks_performed": sorted(self.deterministic_checks_performed),
             "verdict": self.verdict,
             "reasons": sorted(self.reasons),

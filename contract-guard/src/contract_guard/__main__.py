@@ -116,7 +116,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable ANSI color output.",
     )
 
-    # 5. verify
+    # 5. impact
+    impact = sub.add_parser(
+        "impact",
+        help="Compute and display deterministic contract blast radius (services, contracts, code files, endpoints).",
+    )
+    impact.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    impact.add_argument(
+        "--producer",
+        default=None,
+        help="Filter by producer service name.",
+    )
+    impact.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    impact.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 6. verify
     verify = sub.add_parser(
         "verify",
         help="Deterministically evaluate release safety gate (READY or BLOCKED).",
@@ -381,6 +410,64 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0 if len(report.affected_consumers) == 0 else 1
 
 
+def cmd_impact(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    try:
+        report = discover_and_check(args.workspace, producer_filter=args.producer)
+    except Exception as exc:
+        print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    if args.format == "json":
+        import json
+        payload = {
+            "workspace": report.workspace_root,
+            "producer_filter": report.producer_filter,
+            "summary": report.summary,
+            "blast_radius_summary": report.blast_radius_summary.to_dict(),
+            "impacts": [imp.to_dict() for imp in report.impacts],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0 if len(report.affected_consumers) == 0 else 1
+
+    summary = report.blast_radius_summary
+    if not report.affected_consumers:
+        banner = _colorize("[OK] NO BLAST RADIUS - ALL CONSUMERS COMPATIBLE", _GREEN, _BOLD, no_color=nc)
+        print(f"\n{banner}\n")
+        print(f"  {report.summary}\n")
+        return 0
+
+    banner = _colorize("[!!] DETERMINISTIC BLAST RADIUS DETECTED", _RED, _BOLD, no_color=nc)
+    print(f"\n{banner}\n")
+    print(f"  {report.summary}\n")
+
+    print(_colorize("Blast Radius Summary:", _BOLD, no_color=nc))
+    print(f"  Affected Services      : {', '.join(summary.affected_services) if summary.affected_services else 'None'}")
+    print(f"  Affected Endpoints     : {', '.join(summary.affected_endpoints) if summary.affected_endpoints else 'None'}")
+    print(f"  Affected Fields        : {', '.join(summary.affected_fields) if summary.affected_fields else 'None'}")
+    print(f"  Affected Contracts     : {len(summary.affected_contracts)}")
+    for c in summary.affected_contracts:
+        print(f"    - {c}")
+
+    print(f"\n  Confirmed Source Files : {len(summary.confirmed_source_files)}")
+    for f in summary.confirmed_source_files:
+        print(f"    [Confirmed] {f}")
+
+    print(f"  Confirmed Test Files   : {len(summary.confirmed_test_files)}")
+    for f in summary.confirmed_test_files:
+        print(f"    [Confirmed] {f}")
+
+    if summary.likely_source_files or summary.likely_test_files:
+        print(f"\n  Likely Inferred Files  : {len(summary.likely_source_files) + len(summary.likely_test_files)}")
+        for f in summary.likely_source_files:
+            print(f"    [Likely] {f}")
+        for f in summary.likely_test_files:
+            print(f"    [Likely] {f}")
+    print()
+
+    return 1
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     nc = args.no_color
     try:
@@ -454,6 +541,8 @@ def main() -> None:
         sys.exit(cmd_discover(args))
     elif args.command == "analyze":
         sys.exit(cmd_analyze(args))
+    elif args.command == "impact":
+        sys.exit(cmd_impact(args))
     elif args.command == "verify":
         sys.exit(cmd_verify(args))
     elif args.command == "evidence":

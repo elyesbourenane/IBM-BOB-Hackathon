@@ -243,3 +243,132 @@ class TestComparisonReport:
         p = _write_contract(tmp_path, "a.yaml", content)
         report = Comparator(p, p).compare()
         assert report.verdict == "compatible"
+
+
+class TestEndpointRemoved:
+    def test_removed_endpoint_is_breaking(self, tmp_path):
+        consumer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Consumer
+  version: "1.0.0"
+paths:
+  /api/v1/orders/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+"""
+        producer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Producer
+  version: "1.0.0"
+paths:
+  /api/v2/orders/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+"""
+        consumer = _write_contract(tmp_path, "consumer.yaml", consumer_yaml)
+        producer = _write_contract(tmp_path, "producer.yaml", producer_yaml)
+        report = Comparator(producer, consumer).compare()
+        assert report.is_compatible is False
+        assert any(f.change_kind == ChangeKind.ENDPOINT_REMOVED for f in report.findings)
+        removed = [f for f in report.findings if f.change_kind == ChangeKind.ENDPOINT_REMOVED][0]
+        assert "GET /api/v1/orders/{id}" in removed.endpoint
+
+
+class TestCircularReference:
+    def test_circular_ref_does_not_infinite_loop(self, tmp_path):
+        circular_yaml = """
+openapi: "3.0.0"
+info:
+  title: Tree API
+  version: "1.0.0"
+paths:
+  /trees:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+components:
+  schemas:
+    Node:
+      type: object
+      properties:
+        value:
+          type: string
+        child:
+          $ref: "#/components/schemas/Node"
+"""
+        c1 = _write_contract(tmp_path, "c1.yaml", circular_yaml)
+        c2 = _write_contract(tmp_path, "c2.yaml", circular_yaml)
+        report = Comparator(c1, c2).compare()
+        assert report.is_compatible is True
+
+
+class TestArrayProperties:
+    def test_array_item_property_type_change_detected(self, tmp_path):
+        consumer_yaml = """
+openapi: "3.0.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+"""
+        producer_yaml = """
+openapi: "3.0.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+"""
+        consumer = _write_contract(tmp_path, "consumer.yaml", consumer_yaml)
+        producer = _write_contract(tmp_path, "producer.yaml", producer_yaml)
+        report = Comparator(producer, consumer).compare()
+        assert report.is_compatible is False
+        type_changes = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_TYPE_CHANGED]
+        assert len(type_changes) == 1
+        assert "id" in type_changes[0].affected_field
+

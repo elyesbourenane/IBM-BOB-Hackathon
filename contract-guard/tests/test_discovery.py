@@ -265,6 +265,21 @@ class TestDiscoveryErrors:
         assert len(report.results) == 1
         assert report.results[0].error is not None
         assert "order-service" in report.affected_consumers
+        assert len(report.breaking_findings) == 1
+        assert report.breaking_findings[0]["change_kind"] == "contract_error"
+
+    def test_discover_contractguard_yml(self, tmp_path):
+        """Verify discovery finds both .yaml and .yml files."""
+        _make_producer(tmp_path)
+        cdir = _make_consumer_dir(tmp_path, "yml-service")
+        # Rename contractguard.yaml to contractguard.yml
+        yaml_cfg = cdir / "contractguard.yaml"
+        yml_cfg = cdir / "contractguard.yml"
+        yaml_cfg.rename(yml_cfg)
+
+        report = discover_and_check(tmp_path)
+        assert "yml-service" in report.consumers_checked
+        assert "yml-service" in report.compatible_consumers
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,16 @@ from unittest.mock import patch
 
 import pytest
 
-from contract_guard.__main__ import _build_parser, cmd_discover, cmd_verify, cmd_evidence, cmd_analyze
+from contract_guard.__main__ import (
+    _build_parser,
+    cmd_analyze,
+    cmd_check,
+    cmd_compare,
+    cmd_discover,
+    cmd_evidence,
+    cmd_impact,
+    cmd_verify,
+)
 
 
 def test_cli_parser_commands():
@@ -16,6 +25,10 @@ def test_cli_parser_commands():
     args = parser.parse_args(["discover", "/workspace"])
     assert args.command == "discover"
     assert args.workspace == "/workspace"
+
+    args = parser.parse_args(["impact", "/workspace", "--format", "json"])
+    assert args.command == "impact"
+    assert args.format == "json"
 
     args = parser.parse_args(["analyze", "/workspace"])
     assert args.command == "analyze"
@@ -57,16 +70,53 @@ def test_cli_discover_and_verify_e2e(tmp_path: Path, capsys):
     out = capsys.readouterr().out
     assert "ALL CONSUMERS COMPATIBLE" in out
 
-    # 2. Verify
+    # 2. Impact (text)
+    args_impact = parser.parse_args(["impact", str(tmp_path), "--no-color"])
+    rc = cmd_impact(args_impact)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "NO BLAST RADIUS - ALL CONSUMERS COMPATIBLE" in out
+
+    # 3. Impact (json)
+    args_impact_json = parser.parse_args(["impact", str(tmp_path), "--format", "json"])
+    rc = cmd_impact(args_impact_json)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert '"blast_radius_summary"' in out
+
+    # 4. Verify
     args_verify = parser.parse_args(["verify", str(tmp_path), "--no-color"])
     rc = cmd_verify(args_verify)
     assert rc == 0
     out = capsys.readouterr().out
     assert "READY FOR RELEASE" in out
 
-    # 3. Evidence
+    # 5. Evidence
     args_evidence = parser.parse_args(["evidence", str(tmp_path), "--output-dir", str(tmp_path), "--no-color"])
     rc = cmd_evidence(args_evidence)
     assert rc == 0
     assert (tmp_path / "contractguard-evidence.json").exists()
     assert (tmp_path / "contractguard-report.md").exists()
+
+
+def test_cli_compare_and_check(tmp_path: Path, capsys):
+    prod = tmp_path / "prod.yaml"
+    cons = tmp_path / "cons.yaml"
+    prod.write_text("openapi: 3.0.0\npaths:\n  /p:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  amt: {type: number}\n", encoding="utf-8")
+    cons.write_text("openapi: 3.0.0\npaths:\n  /p:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  amt: {type: number}\n", encoding="utf-8")
+
+    parser = _build_parser()
+    args_compare = parser.parse_args(["compare", str(prod), str(cons), "--no-color"])
+    rc = cmd_compare(args_compare)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "COMPATIBLE" in out
+
+    cfg = tmp_path / "contractguard.yaml"
+    cfg.write_text(f"service: c\ndependencies:\n  - service: p\n    consumer_contract: {cons.name}\n    producer_contract: {prod.name}\n", encoding="utf-8")
+    args_check = parser.parse_args(["check", str(cfg), "--no-color"])
+    rc = cmd_check(args_check)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "COMPATIBLE" in out
+

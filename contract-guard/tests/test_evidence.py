@@ -129,3 +129,54 @@ def test_evidence_file_generation_and_no_secrets(tmp_path: Path):
     assert "MISTRAL_API_KEY" not in json_content
     assert "Bearer" not in json_content
     assert "password" not in json_content.lower()
+
+
+def test_evidence_hash_canonical_sorting_stability():
+    """Verify that reversing or reordering findings produces the exact same evidence hash."""
+    f1 = {
+        "consumer_service": "payment-client",
+        "producer_service": "payment-service",
+        "endpoint": "GET /api/payments/{id}",
+        "affected_field": "paymentAmount",
+        "change_kind": "field_renamed",
+        "severity": "breaking",
+        "detail": "Renamed to totalAmount",
+        "reason": "Consumer depends on field",
+    }
+    f2 = {
+        "consumer_service": "order-service",
+        "producer_service": "payment-service",
+        "endpoint": "POST /api/payments",
+        "affected_field": "amount",
+        "change_kind": "field_removed",
+        "severity": "breaking",
+        "detail": "Field removed",
+        "reason": "Consumer depends on field",
+    }
+
+    report1 = DiscoveryReport(
+        workspace_root="/workspace",
+        producer_filter=None,
+        configs_found=2,
+        consumers_checked=["payment-client", "order-service"],
+        compatible_consumers=[],
+        affected_consumers=["payment-client", "order-service"],
+        results=[],
+        breaking_findings=[f1, f2],
+    )
+    report2 = DiscoveryReport(
+        workspace_root="/workspace",
+        producer_filter=None,
+        configs_found=2,
+        consumers_checked=["order-service", "payment-client"],
+        compatible_consumers=[],
+        affected_consumers=["order-service", "payment-client"],
+        results=[],
+        breaking_findings=[f2, f1],  # reversed order
+    )
+
+    ev1 = generate_evidence(report1, evaluate_release_gate(report1))
+    ev2 = generate_evidence(report2, evaluate_release_gate(report2))
+
+    assert ev1.evidence_id == ev2.evidence_id
+

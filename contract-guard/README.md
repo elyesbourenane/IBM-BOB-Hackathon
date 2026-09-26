@@ -75,7 +75,7 @@ A major vulnerability in modern microservices is that **consumer tests can pass 
 In microservice client repositories (such as `payment-client`), HTTP interactions are typically mocked using frameworks like Spring's `MockRestServiceServer` or WireMock. When a producer changes a response field (e.g., `paymentAmount` → `totalAmount`):
 1. Consumer unit and integration tests continue asserting against hardcoded JSON fixtures expecting `paymentAmount`.
 2. The consumer test suite **passes 100% green**.
-3. In production, real HTTP responses contain `totalAmount`. Jackson/JSON deserializers fail silently or throw exceptions, causing immediate service outages.
+3. In production, real HTTP responses contain `totalAmount`. Depending on the consumer's DTO configuration and deserialization behavior, the changed response can lead to missing data, deserialization errors, or downstream failures.
 
 **ContractGuard catches this incompatibility statically at the contract level without needing to boot or run live services.**
 
@@ -309,7 +309,7 @@ contract-guard verify ..
 contract-guard evidence .. --output-dir ./release-evidence
 ```
 
-The generated `contractguard-evidence.json` contains a stable SHA-256 evidence hash (`cg-ev-...`) certifying that all 3 downstream consumers were verified and are backward-compatible.
+The generated evidence contains a stable SHA-256 identifier that makes the evidence artifact tamper-evident.
 
 ---
 

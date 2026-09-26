@@ -157,15 +157,15 @@ def _detect_renames(
     renamed_consumer: set[str] = set()
     renamed_producer: set[str] = set()
 
-    # Only consider top-level fields for rename detection to keep it simple
-    consumer_missing = {
+    # Only consider top-level fields for rename detection to keep it simple, sorted for strict determinism
+    consumer_missing = sorted([
         k for k in consumer_props if k not in producer_props and "." not in k
-    }
-    producer_new = {
+    ])
+    producer_new = sorted([
         k for k in producer_props if k not in consumer_props and "." not in k
-    }
+    ])
 
-    for c_field in list(consumer_missing):
+    for c_field in consumer_missing:
         c_type = consumer_props[c_field].get("type")
         candidates = [
             p for p in producer_new

@@ -13,6 +13,8 @@ class Severity(str, Enum):
 
 
 class ChangeKind(str, Enum):
+    ENDPOINT_REMOVED = "endpoint_removed"
+    CONTRACT_ERROR = "contract_error"
     FIELD_REMOVED = "field_removed"
     FIELD_RENAMED = "field_renamed"
     FIELD_TYPE_CHANGED = "field_type_changed"
@@ -22,6 +24,14 @@ class ChangeKind(str, Enum):
 
 # Human-readable explanations for each change kind
 _EXPLANATIONS: dict[ChangeKind, tuple[Severity, str]] = {
+    ChangeKind.ENDPOINT_REMOVED: (
+        Severity.BREAKING,
+        "Consumer depends on this endpoint; removing it breaks existing clients.",
+    ),
+    ChangeKind.CONTRACT_ERROR: (
+        Severity.BREAKING,
+        "Contract specification is missing, unreadable, or invalid.",
+    ),
     ChangeKind.FIELD_REMOVED: (
         Severity.BREAKING,
         "Consumer depends on this field; removing it breaks existing clients.",

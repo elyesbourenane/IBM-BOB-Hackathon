@@ -48,6 +48,7 @@ PROTOCOL_VERSION = "2024-11-05"
 TOOL_COMPARE = "compare_contracts"
 TOOL_READ_CONFIG = "read_contractguard_config"
 TOOL_DISCOVER = "discover_and_check_consumers"
+TOOL_BLAST_RADIUS = "get_blast_radius"
 TOOL_ANALYZE = "analyze_contract_impact"
 TOOL_VERIFY_RELEASE = "verify_release_safety"
 
@@ -113,6 +114,35 @@ TOOL_DEFINITION_DISCOVER = {
         "Returns a structured report with: producer filter used, number of config "
         "files found, consumers checked, compatible consumers, affected consumers, "
         "and a flat list of all breaking findings across every consumer."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "required": ["workspace_root"],
+        "properties": {
+            "workspace_root": {
+                "type": "string",
+                "description": (
+                    "Absolute or workspace-relative path to the directory to search "
+                    "recursively for contractguard.yaml files."
+                ),
+            },
+            "producer_filter": {
+                "type": "string",
+                "description": (
+                    "Optional. When provided, only dependencies whose service name "
+                    "matches this value are checked. Omit to check all dependencies."
+                ),
+            },
+        },
+    },
+}
+
+TOOL_DEFINITION_BLAST_RADIUS = {
+    "name": TOOL_BLAST_RADIUS,
+    "description": (
+        "Discover consumers and compute deterministic contract blast radius without "
+        "invoking external AI services. Returns aggregate summary of affected services, "
+        "contracts, endpoints, fields, and confirmed/likely source and test files."
     ),
     "inputSchema": {
         "type": "object",
@@ -369,6 +399,7 @@ def _run_discover(arguments: dict[str, Any]) -> dict[str, Any]:
         "compatible_consumers": report.compatible_consumers,
         "affected_consumers": report.affected_consumers,
         "breaking_findings": report.breaking_findings,
+        "blast_radius_summary": report.blast_radius_summary.to_dict(),
         "blast_radius": [imp.to_dict() for imp in report.impacts],
         "summary": report.summary,
         "results": [
@@ -384,6 +415,49 @@ def _run_discover(arguments: dict[str, Any]) -> dict[str, Any]:
             }
             for r in report.results
         ],
+    }
+    return {
+        "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],
+    }
+
+
+def _run_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Execute the get_blast_radius tool.
+    Computes deterministic blast-radius across all discovered consumers.
+    """
+    workspace_root = arguments.get("workspace_root", "")
+    if not workspace_root:
+        return {
+            "content": [{"type": "text", "text": "Missing required argument: workspace_root"}],
+            "isError": True,
+        }
+    producer_filter: str | None = arguments.get("producer_filter") or None
+
+    try:
+        report = discover_and_check(workspace_root, producer_filter=producer_filter)
+    except FileNotFoundError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Workspace root not found: {exc}"}],
+            "isError": True,
+        }
+    except NotADirectoryError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Not a directory: {exc}"}],
+            "isError": True,
+        }
+    except Exception as exc:  # pragma: no cover
+        return {
+            "content": [{"type": "text", "text": f"Unexpected error during blast-radius analysis: {exc}"}],
+            "isError": True,
+        }
+
+    payload = {
+        "workspace_root": report.workspace_root,
+        "producer_filter": report.producer_filter,
+        "summary": report.summary,
+        "blast_radius_summary": report.blast_radius_summary.to_dict(),
+        "impacts": [imp.to_dict() for imp in report.impacts],
     }
     return {
         "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],
@@ -448,6 +522,7 @@ def _run_analyze(
         "compatible_consumers": report.compatible_consumers,
         "affected_consumers": report.affected_consumers,
         "breaking_findings": report.breaking_findings,
+        "blast_radius_summary": report.blast_radius_summary.to_dict(),
         "blast_radius": [imp.to_dict() for imp in report.impacts],
         "ai_analysis": {
             "status": ai_report.status,
@@ -558,6 +633,7 @@ def _dispatch(
                 TOOL_DEFINITION_COMPARE,
                 TOOL_DEFINITION_READ_CONFIG,
                 TOOL_DEFINITION_DISCOVER,
+                TOOL_DEFINITION_BLAST_RADIUS,
                 TOOL_DEFINITION_ANALYZE,
                 TOOL_DEFINITION_VERIFY_RELEASE,
             ]
@@ -574,6 +650,8 @@ def _dispatch(
             result = _run_read_config(arguments)
         elif name == TOOL_DISCOVER:
             result = _run_discover(arguments)
+        elif name == TOOL_BLAST_RADIUS:
+            result = _run_blast_radius(arguments)
         elif name == TOOL_ANALYZE:
             result = _run_analyze(arguments, analyzer=analyzer)
         elif name == TOOL_VERIFY_RELEASE:

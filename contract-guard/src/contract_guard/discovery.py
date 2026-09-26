@@ -16,14 +16,15 @@ Only the discovery/check logic lives here; the MCP wiring is in
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .comparator import Comparator
 from .config import load_config, ContractGuardConfig, DependencyConfig
-from .impact import ConsumerImpact, scan_consumer_impact
-from .models import ComparisonReport, Finding
+from .impact import BlastRadiusSummary, ConsumerImpact, scan_consumer_impact, summarize_blast_radius
+from .models import ChangeKind, ComparisonReport, Finding, Severity
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,10 @@ class DiscoveryReport:
     impacts: list[ConsumerImpact] = field(default_factory=list)
 
     @property
+    def blast_radius_summary(self) -> BlastRadiusSummary:
+        return summarize_blast_radius(self.impacts)
+
+    @property
     def summary(self) -> str:
         total = len(self.consumers_checked)
         compat = len(self.compatible_consumers)
@@ -75,9 +80,31 @@ class DiscoveryReport:
 # Discovery logic
 # ---------------------------------------------------------------------------
 
+SKIP_DISCOVERY_DIRS = {
+    ".git",
+    "node_modules",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "target",
+    "build",
+    "dist",
+    ".gradle",
+    "venv",
+}
+
+
 def _find_config_files(workspace_root: Path) -> list[Path]:
-    """Return all ``contractguard.yaml`` files under *workspace_root*."""
-    return sorted(workspace_root.rglob("contractguard.yaml"))
+    """Return all ``contractguard.yaml`` or ``contractguard.yml`` files under *workspace_root*."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(workspace_root):
+        dirs[:] = [d for d in dirs if d not in SKIP_DISCOVERY_DIRS]
+        for f in files:
+            if f in ("contractguard.yaml", "contractguard.yml"):
+                found.append(Path(root) / f)
+    return sorted(found)
 
 
 def _finding_to_dict(f: Finding) -> dict[str, Any]:
@@ -132,7 +159,13 @@ def discover_and_check(
         try:
             config: ContractGuardConfig = load_config(config_path)
         except (ValueError, FileNotFoundError) as exc:
-            # Malformed config — record a single error result per file
+            # Malformed config — record an error finding and result per file
+            err_finding = Finding(
+                endpoint="CONFIG",
+                affected_field=config_path.name,
+                change_kind=ChangeKind.CONTRACT_ERROR,
+                detail=str(exc),
+            )
             all_results.append(
                 ConsumerResult(
                     consumer_service=str(config_path),
@@ -141,6 +174,7 @@ def discover_and_check(
                     producer_contract="",
                     is_compatible=False,
                     verdict="error",
+                    findings=[err_finding],
                     error=str(exc),
                 )
             )
@@ -180,6 +214,12 @@ def discover_and_check(
                     )
                 )
             except (FileNotFoundError, ValueError, KeyError) as exc:
+                err_finding = Finding(
+                    endpoint="CONTRACT",
+                    affected_field=Path(dep.consumer_contract).name,
+                    change_kind=ChangeKind.CONTRACT_ERROR,
+                    detail=str(exc),
+                )
                 all_results.append(
                     ConsumerResult(
                         consumer_service=config.service,
@@ -188,6 +228,7 @@ def discover_and_check(
                         producer_contract=str(dep.producer_contract),
                         is_compatible=False,
                         verdict="error",
+                        findings=[err_finding],
                         error=str(exc),
                     )
                 )

@@ -7,7 +7,7 @@ from typing import Any
 
 from .extractor import flatten_properties, get_response_schema, iter_endpoints
 from .loader import load_contract
-from .models import ComparisonReport, Finding
+from .models import ChangeKind, ComparisonReport, Finding
 from .rules import ALL_RULES, _detect_renames
 
 
@@ -47,10 +47,20 @@ class Comparator:
             for method, path, op in iter_endpoints(consumer_doc)
         }
 
-        for endpoint_key, consumer_op in consumer_endpoints.items():
+        for endpoint_key, consumer_op in sorted(consumer_endpoints.items()):
             producer_op = producer_endpoints.get(endpoint_key)
             if producer_op is None:
-                # Entire endpoint removed — not in scope for this version
+                report.findings.append(
+                    Finding(
+                        endpoint=endpoint_key,
+                        affected_field="",
+                        change_kind=ChangeKind.ENDPOINT_REMOVED,
+                        detail=(
+                            f"Endpoint '{endpoint_key}' is expected by consumer "
+                            f"but is not present in producer specification."
+                        ),
+                    )
+                )
                 continue
 
             findings = self._compare_responses(
@@ -58,6 +68,7 @@ class Comparator:
             )
             report.findings.extend(findings)
 
+        report.findings.sort(key=lambda f: (f.endpoint, f.affected_field, f.change_kind.value))
         return report
 
     def _compare_responses(
