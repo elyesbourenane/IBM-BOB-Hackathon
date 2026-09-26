@@ -1,0 +1,39 @@
+{
+  "evidence_id": "cg-ev-2e641a421c862688",
+  "contractguard_version": "0.1.0",
+  "timestamp": "2026-09-26T10:59:55.763511+00:00",
+  "verdict": "READY",
+  "producer_service": "payment-service",
+  "workspace_root": "D:\\Code\\IBM BOB Hackathon",
+  "changed_contracts": [
+    "D:\\Code\\IBM BOB Hackathon\\payment-service\\docs\\openapi.yaml"
+  ],
+  "consumers_checked": [
+    "order-service",
+    "payment-client",
+    "reporting-service"
+  ],
+  "compatible_consumers": [
+    "order-service",
+    "payment-client",
+    "reporting-service"
+  ],
+  "affected_consumers": [],
+  "findings": [],
+  "deterministic_checks_performed": [
+    "check_removed_fields",
+    "check_type_changes",
+    "check_required_added",
+    "check_optional_added",
+    "detect_renames",
+    "workspace_consumer_discovery",
+    "deterministic_blast_radius_scan"
+  ],
+  "test_results": {
+    "status": "PASS",
+    "details": "Automated tests: PASS"
+  },
+  "reasons": [
+    "All consumer contracts are compatible and all verified tests passed."
+  ]
+}
