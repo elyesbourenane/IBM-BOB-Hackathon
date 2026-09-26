@@ -10,17 +10,15 @@ public class PaymentResponse {
     private String customerId;
     @JsonProperty("totalAmount")
     private BigDecimal totalAmount;
-    private String currency;
     private String status;
 
     public PaymentResponse() {
     }
 
-    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, String currency, String status) {
+    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, String status) {
         this.id = id;
         this.customerId = customerId;
         this.totalAmount = totalAmount;
-        this.currency = currency;
         this.status = status;
     }
 
@@ -48,14 +46,6 @@ public class PaymentResponse {
         this.totalAmount = totalAmount;
     }
 
-    public String getCurrency() {
-        return currency;
-    }
-
-    public void setCurrency(String currency) {
-        this.currency = currency;
-    }
-
     public String getStatus() {
         return status;
     }
@@ -72,13 +62,12 @@ public class PaymentResponse {
         return Objects.equals(id, that.id) &&
                 Objects.equals(customerId, that.customerId) &&
                 Objects.equals(totalAmount, that.totalAmount) &&
-                Objects.equals(currency, that.currency) &&
                 Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, customerId, totalAmount, currency, status);
+        return Objects.hash(id, customerId, totalAmount, status);
     }
 
     @Override
@@ -87,7 +76,6 @@ public class PaymentResponse {
                 "id='" + id + '\'' +
                 ", customerId='" + customerId + '\'' +
                 ", totalAmount=" + totalAmount +
-                ", currency='" + currency + '\'' +
                 ", status='" + status + '\'' +
                 '}';
     }

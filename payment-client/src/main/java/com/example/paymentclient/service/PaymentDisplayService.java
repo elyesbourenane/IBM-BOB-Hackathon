@@ -23,10 +23,9 @@ public class PaymentDisplayService {
             return "Payment not found: " + paymentId;
         }
         return String.format(
-                "Payment [%s]: Amount %s %s for customer %s (Status: %s)",
+                "Payment [%s]: Amount %s for customer %s (Status: %s)",
                 payment.getId(),
                 payment.getTotalAmount() != null ? payment.getTotalAmount().toPlainString() : "N/A",
-                payment.getCurrency(),
                 payment.getCustomerId(),
                 payment.getStatus()
         );

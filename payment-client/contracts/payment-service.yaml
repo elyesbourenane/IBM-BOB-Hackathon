@@ -31,7 +31,6 @@ components:
         - id
         - customerId
         - totalAmount
-        - currency
         - status
       properties:
         id:
@@ -47,13 +46,6 @@ components:
           format: double
           description: Payment amount
           example: 100.00
-        currency:
-          type: string
-          description: Currency code
-          enum:
-            - EUR
-            - USD
-          example: EUR
         status:
           type: string
           description: Payment status

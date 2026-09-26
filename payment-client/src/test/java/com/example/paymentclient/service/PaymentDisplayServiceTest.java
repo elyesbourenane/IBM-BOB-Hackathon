@@ -33,7 +33,6 @@ class PaymentDisplayServiceTest {
                 "PAY-001",
                 "CUST-123",
                 new BigDecimal("100.00"),
-                "EUR",
                 "APPROVED"
         );
 
@@ -44,7 +43,6 @@ class PaymentDisplayServiceTest {
         assertNotNull(summary);
         assertTrue(summary.contains("PAY-001"));
         assertTrue(summary.contains("100.00"));
-        assertTrue(summary.contains("EUR"));
         assertTrue(summary.contains("CUST-123"));
         assertTrue(summary.contains("APPROVED"));
 
@@ -58,7 +56,6 @@ class PaymentDisplayServiceTest {
                 "PAY-001",
                 "CUST-123",
                 new BigDecimal("100.00"),
-                "EUR",
                 "APPROVED"
         );
 

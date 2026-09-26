@@ -1,6 +1,5 @@
 package com.example.paymentservice.dto;
 
-import com.example.paymentservice.model.Currency;
 import com.example.paymentservice.model.Payment;
 import com.example.paymentservice.model.PaymentStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,20 +19,16 @@ public class PaymentResponse {
     @Schema(description = "Payment amount", example = "150.00", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal paymentAmount;
 
-    @Schema(description = "Payment currency", example = "EUR", requiredMode = Schema.RequiredMode.REQUIRED)
-    private Currency currency;
-
     @Schema(description = "Payment status", example = "APPROVED", requiredMode = Schema.RequiredMode.REQUIRED)
     private PaymentStatus status;
 
     public PaymentResponse() {
     }
 
-    public PaymentResponse(String id, String customerId, BigDecimal paymentAmount, Currency currency, PaymentStatus status) {
+    public PaymentResponse(String id, String customerId, BigDecimal paymentAmount, PaymentStatus status) {
         this.id = id;
         this.customerId = customerId;
         this.paymentAmount = paymentAmount;
-        this.currency = currency;
         this.status = status;
     }
 
@@ -42,7 +37,6 @@ public class PaymentResponse {
                 payment.getId(),
                 payment.getCustomerId(),
                 payment.getAmount(),
-                payment.getCurrency(),
                 payment.getStatus()
         );
     }
@@ -71,14 +65,6 @@ public class PaymentResponse {
         this.paymentAmount = paymentAmount;
     }
 
-    public Currency getCurrency() {
-        return currency;
-    }
-
-    public void setCurrency(Currency currency) {
-        this.currency = currency;
-    }
-
     public PaymentStatus getStatus() {
         return status;
     }
@@ -95,13 +81,12 @@ public class PaymentResponse {
         return Objects.equals(id, that.id) &&
                 Objects.equals(customerId, that.customerId) &&
                 Objects.equals(paymentAmount, that.paymentAmount) &&
-                currency == that.currency &&
                 status == that.status;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, customerId, paymentAmount, currency, status);
+        return Objects.hash(id, customerId, paymentAmount, status);
     }
 
     @Override
@@ -110,7 +95,6 @@ public class PaymentResponse {
                 "id='" + id + '\'' +
                 ", customerId='" + customerId + '\'' +
                 ", paymentAmount=" + paymentAmount +
-                ", currency=" + currency +
                 ", status=" + status +
                 '}';
     }

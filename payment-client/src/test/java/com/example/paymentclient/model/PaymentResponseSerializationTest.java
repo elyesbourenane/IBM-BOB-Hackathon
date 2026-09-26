@@ -22,7 +22,6 @@ class PaymentResponseSerializationTest {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
                   "totalAmount": 100.00,
-                  "currency": "EUR",
                   "status": "APPROVED"
                 }
                 """;
@@ -33,7 +32,6 @@ class PaymentResponseSerializationTest {
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
         assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
-        assertEquals("EUR", response.getCurrency());
         assertEquals("APPROVED", response.getStatus());
     }
 
@@ -45,7 +43,6 @@ class PaymentResponseSerializationTest {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
                   "totalAmount": 100.00,
-                  "currency": "EUR",
                   "status": "APPROVED"
                 }
                 """;

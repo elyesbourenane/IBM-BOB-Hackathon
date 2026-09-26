@@ -37,7 +37,6 @@ class PaymentClientTest {
                     "id": "PAY-001",
                     "customerId": "CUST-123",
                     "totalAmount": 100.00,
-                    "currency": "EUR",
                     "status": "APPROVED"
                 }
                 """;
@@ -53,7 +52,6 @@ class PaymentClientTest {
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
         assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
-        assertEquals("EUR", response.getCurrency());
         assertEquals("APPROVED", response.getStatus());
     }
 
@@ -65,7 +63,6 @@ class PaymentClientTest {
                     "id": "PAY-002",
                     "customerId": "CUST-456",
                     "totalAmount": 250.00,
-                    "currency": "USD",
                     "status": "PENDING"
                 }
                 """;
