@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .discovery import discover_and_check, DiscoveryReport
-from .evidence import evaluate_release_gate, ReleaseVerification, ReleaseStatus
+from .evidence import evaluate_release_gate, generate_evidence, ReleaseVerification, ReleaseStatus
 from .graph import build_dependency_graph, DependencyGraph
 from .mission import generate_repair_mission, RepairMission, SemanticChange
 from .versioning import calculate_semver_recommendation, SemVerRecommendation
@@ -89,6 +89,7 @@ class ChangePassport:
             f"**Producer:** `{self.producer}`  ",
             f"**Contract:** `{self.contract}`  ",
             f"**Release Status:** **{ver.get('status', 'UNKNOWN')}**  ",
+            f"**Evidence ID:** `{self.evidence_id or 'N/A'}`  ",
             f"**SemVer Bump:** `{rel.get('from', '?')} -> {rel.get('to', '?')}` ({rel.get('semver', 'NONE')})  ",
             "",
             "## 1. Semantic Change",
@@ -139,6 +140,7 @@ class ChangePassport:
         lines.extend([
             "## 4. Verification & Next Steps",
             f"- **Verification Status:** `{ver.get('status', 'UNKNOWN')}`",
+            f"- **Evidence ID:** `{self.evidence_id or 'N/A'}`",
             f"- **Compatible Consumers:** {ver.get('compatible_consumers', 0)}",
             f"- **Incompatible Consumers:** {ver.get('incompatible_consumers', 0)}",
             f"- **Breaking Findings:** {ver.get('breaking_findings', 0)}",
@@ -174,6 +176,7 @@ class ChangePassport:
             f"Producer:       {self.producer}",
             f"Contract:       {self.contract}",
             f"Release Status: {ver.get('status', 'UNKNOWN')}",
+            f"Evidence ID:    {self.evidence_id or 'N/A'}",
             f"SemVer:         {rel.get('from', '?')} -> {rel.get('to', '?')} ({rel.get('semver', 'NONE')})",
             "",
             "SEMANTIC CHANGE",
@@ -309,6 +312,13 @@ def generate_change_passport(
     passport_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:8]
     passport_id = f"passport-{producer}-{passport_hash}"
 
+    # Generate canonical release verification evidence matching CLI evidence inputs
+    evidence_report = generate_evidence(
+        report=report,
+        verification=verification_res,
+    )
+    evidence_id = evidence_report.evidence_id
+
     return ChangePassport(
         passport_id=passport_id,
         producer=producer,
@@ -319,5 +329,5 @@ def generate_change_passport(
         verification=verification_dict,
         dependency_graph=graph.to_dict(),
         repair_mission=mission_dict,
-        evidence_id=verification_res.mission_id or None,
+        evidence_id=evidence_id,
     )

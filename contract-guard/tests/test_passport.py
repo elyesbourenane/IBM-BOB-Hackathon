@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from contract_guard.discovery import discover_and_check
+from contract_guard.evidence import evaluate_release_gate, generate_evidence
 from contract_guard.passport import ChangePassport, generate_change_passport
 
 
@@ -172,28 +174,59 @@ def test_generate_passport_breaking(breaking_workspace: Path):
     assert passport.repair_mission is not None
     assert passport.dependency_graph is not None
 
+    # Evidence ID assertions
+    assert passport.evidence_id is not None
+    assert passport.evidence_id.startswith("cg-ev-")
+
     # Test JSON output
     data = json.loads(passport.to_json())
     assert data["passport_id"] == passport.passport_id
     assert data["release_status"] == "BLOCKED"
     assert data["impact"]["affected_consumers"] == 2
+    assert data["evidence_id"] == passport.evidence_id
 
     # Test Markdown formatting
     md = passport.format_markdown()
     assert "CONTRACTGUARD CHANGE PASSPORT" in md
     assert "payment-service" in md
     assert "BLOCKED" in md
+    assert passport.evidence_id in md
 
     # Test Text formatting
     txt = passport.format_text()
     assert "CHANGE PASSPORT" in txt
     assert "BLOCKED" in txt
+    assert passport.evidence_id in txt
 
 
 def test_passport_deterministic_id(breaking_workspace: Path):
     p1 = generate_change_passport(str(breaking_workspace), producer_filter="payment-service")
     p2 = generate_change_passport(str(breaking_workspace), producer_filter="payment-service")
     assert p1.passport_id == p2.passport_id
+
+
+def test_passport_evidence_id_deterministic(breaking_workspace: Path):
+    p1 = generate_change_passport(str(breaking_workspace), producer_filter="payment-service")
+    p2 = generate_change_passport(str(breaking_workspace), producer_filter="payment-service")
+    assert p1.evidence_id == p2.evidence_id
+    assert p1.evidence_id.startswith("cg-ev-")
+
+
+def test_passport_evidence_id_consistency_with_generate_evidence(breaking_workspace: Path):
+    passport = generate_change_passport(str(breaking_workspace), producer_filter="payment-service")
+
+    report = discover_and_check(str(breaking_workspace), producer_filter="payment-service")
+    verification = evaluate_release_gate(
+        report=report,
+        producer_service="payment-service",
+        test_results={"status": "PASS", "details": "Automated tests: PASS"},
+    )
+    direct_evidence = generate_evidence(
+        report=report,
+        verification=verification,
+    )
+
+    assert passport.evidence_id == direct_evidence.evidence_id
 
 
 def test_cli_passport_text(breaking_workspace: Path):
@@ -217,6 +250,7 @@ def test_cli_passport_json(breaking_workspace: Path):
     data = json.loads(res.stdout)
     assert data["release_status"] == "BLOCKED"
     assert data["producer"] == "payment-service"
+    assert data["evidence_id"].startswith("cg-ev-")
 
 
 def test_cli_passport_markdown(breaking_workspace: Path):
@@ -227,3 +261,31 @@ def test_cli_passport_markdown(breaking_workspace: Path):
     )
     assert res.returncode == 1
     assert "CONTRACTGUARD CHANGE PASSPORT" in res.stdout
+
+
+def test_cli_passport_matches_cli_evidence(breaking_workspace: Path, tmp_path: Path):
+    res_pass = subprocess.run(
+        [sys.executable, "-m", "contract_guard", "passport", str(breaking_workspace), "--format", "json"],
+        capture_output=True,
+        text=True,
+    )
+    passport_data = json.loads(res_pass.stdout)
+
+    ev_dir = tmp_path / "ev_out"
+    res_ev = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "contract_guard",
+            "evidence",
+            str(breaking_workspace),
+            "--producer",
+            "payment-service",
+            "--output-dir",
+            str(ev_dir),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    ev_data = json.loads((ev_dir / "contractguard-evidence.json").read_text(encoding="utf-8"))
+    assert passport_data["evidence_id"] == ev_data["evidence_id"]
