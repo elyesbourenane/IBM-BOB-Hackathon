@@ -135,6 +135,12 @@ class EvidenceReport:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     version: str = CONTRACTGUARD_VERSION
     evidence_id: str = ""
+    # Enriched Git and Phase 2 metadata
+    repository_path: Optional[str] = None
+    commit_sha: Optional[str] = None
+    base_ref: Optional[str] = None
+    semver: Optional[dict[str, Any]] = None
+    blast_radius_summary: Optional[dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         if not self.evidence_id:
@@ -168,6 +174,15 @@ class EvidenceReport:
             "reasons": sorted(self.reasons),
             "test_results": self.test_results,
         }
+        if self.commit_sha:
+            substantive["commit_sha"] = self.commit_sha
+        if self.base_ref:
+            substantive["base_ref"] = self.base_ref
+        if self.semver:
+            substantive["semver"] = self.semver
+        if self.blast_radius_summary:
+            substantive["blast_radius_summary"] = self.blast_radius_summary
+
         canonical_bytes = json.dumps(substantive, sort_keys=True).encode("utf-8")
         digest = hashlib.sha256(canonical_bytes).hexdigest()
         return f"cg-ev-{digest[:16]}"
@@ -180,11 +195,16 @@ class EvidenceReport:
             "verdict": self.verdict,
             "producer_service": self.producer_service,
             "workspace_root": self.workspace_root,
+            "repository_path": self.repository_path,
+            "commit_sha": self.commit_sha,
+            "base_ref": self.base_ref,
+            "semver": self.semver,
             "changed_contracts": self.changed_contracts,
             "consumers_checked": self.consumers_checked,
             "compatible_consumers": self.compatible_consumers,
             "affected_consumers": self.affected_consumers,
             "findings": self.findings,
+            "blast_radius_summary": self.blast_radius_summary,
             "deterministic_checks_performed": self.deterministic_checks_performed,
             "test_results": self.test_results,
             "reasons": self.reasons,
@@ -209,12 +229,25 @@ class EvidenceReport:
             f"## Scope & Context",
             f"- **Producer Service:** `{self.producer_service}`",
             f"- **Workspace Root:** `{self.workspace_root}`",
+        ]
+        if self.commit_sha:
+            lines.append(f"- **Commit SHA:** `{self.commit_sha}`")
+        if self.base_ref:
+            lines.append(f"- **Base Ref:** `{self.base_ref}`")
+        if self.semver:
+            bump = self.semver.get("bump", "N/A").upper()
+            curr = self.semver.get("current_version")
+            rec = self.semver.get("recommended_version")
+            ver_text = f"`{curr} -> {rec}`" if (curr and rec) else f"Bump: `{bump}`"
+            lines.append(f"- **SemVer Recommendation:** **{bump}** ({ver_text})")
+
+        lines.extend([
             f"- **Consumers Checked:** {len(self.consumers_checked)} ({', '.join(self.consumers_checked) if self.consumers_checked else 'None'})",
             f"- **Compatible Consumers:** {len(self.compatible_consumers)} ({', '.join(self.compatible_consumers) if self.compatible_consumers else 'None'})",
             f"- **Affected Consumers:** {len(self.affected_consumers)} ({', '.join(self.affected_consumers) if self.affected_consumers else 'None'})",
             f"",
             f"## Verdict Reasons",
-        ]
+        ])
         for r in self.reasons:
             lines.append(f"- {r}")
 
@@ -277,6 +310,11 @@ def generate_evidence(
     report: DiscoveryReport,
     verification: ReleaseVerification,
     output_dir: Optional[Path | str] = None,
+    repository_path: Optional[str] = None,
+    commit_sha: Optional[str] = None,
+    base_ref: Optional[str] = None,
+    semver: Optional[dict[str, Any]] = None,
+    blast_radius_summary: Optional[dict[str, Any]] = None,
 ) -> EvidenceReport:
     """Factory to construct and optionally write the EvidenceReport."""
     changed_contracts = list(
@@ -294,6 +332,11 @@ def generate_evidence(
         verdict=verification.status.value,
         reasons=verification.reasons,
         test_results=verification.test_results,
+        repository_path=repository_path,
+        commit_sha=commit_sha,
+        base_ref=base_ref,
+        semver=semver,
+        blast_radius_summary=blast_radius_summary or report.blast_radius_summary.to_dict(),
     )
     if output_dir:
         evidence.write(output_dir)

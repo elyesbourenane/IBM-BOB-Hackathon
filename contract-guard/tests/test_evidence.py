@@ -180,3 +180,34 @@ def test_evidence_hash_canonical_sorting_stability():
 
     assert ev1.evidence_id == ev2.evidence_id
 
+
+def test_evidence_git_and_semver_enrichment(tmp_path: Path):
+    report = _make_discovery_report(affected=False)
+    verification = evaluate_release_gate(report)
+
+    evidence = generate_evidence(
+        report,
+        verification,
+        output_dir=tmp_path,
+        commit_sha="1234567890abcdef1234567890abcdef12345678",
+        base_ref="origin/main",
+        repository_path="/workspace/my-repo",
+        semver={"bump": "minor", "current_version": "1.4.0", "recommended_version": "1.5.0", "reason": "Added field"},
+    )
+
+    assert evidence.commit_sha == "1234567890abcdef1234567890abcdef12345678"
+    assert evidence.base_ref == "origin/main"
+    assert evidence.semver["bump"] == "minor"
+    assert evidence.evidence_id.startswith("cg-ev-")
+
+    data = evidence.to_dict()
+    assert data["commit_sha"] == "1234567890abcdef1234567890abcdef12345678"
+    assert data["base_ref"] == "origin/main"
+    assert data["semver"]["recommended_version"] == "1.5.0"
+
+    md = evidence.to_markdown()
+    assert "1234567890abcdef1234567890abcdef12345678" in md
+    assert "origin/main" in md
+    assert "MINOR" in md
+
+

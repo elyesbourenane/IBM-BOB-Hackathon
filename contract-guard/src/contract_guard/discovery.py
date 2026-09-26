@@ -82,6 +82,7 @@ class DiscoveryReport:
 
 SKIP_DISCOVERY_DIRS = {
     ".git",
+    ".github",
     "node_modules",
     ".idea",
     ".vscode",

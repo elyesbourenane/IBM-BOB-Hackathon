@@ -1,0 +1,29 @@
+# GitLab CI Configuration Example for ContractGuard PR / Merge Request Gate
+stages:
+  - contract-check
+
+contractguard:pr-check:
+  stage: contract-check
+  image: python:3.11-slim
+  before_script:
+    - apt-get update && apt-get install -y git
+    - python -m pip install --upgrade pip
+    - pip install ./contract-guard
+  script:
+    # Fetch base branch reference for merge request pipelines
+    - git fetch origin ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main}
+    # Execute deterministic PR contract safety analysis
+    # Exit 0 = READY (Merge safe)
+    # Exit 1 = BLOCKED (Breaking changes detected)
+    # Exit 2 = Error
+    - contract-guard pr . --base origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main} --format markdown --output contractguard-pr.md
+  artifacts:
+    when: always
+    paths:
+      - contractguard-pr.md
+      - contractguard-evidence.json
+      - contractguard-report.md
+    expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

@@ -15,7 +15,10 @@ from contract_guard.__main__ import (
     cmd_compare,
     cmd_discover,
     cmd_evidence,
+    cmd_git_diff,
+    cmd_git_status,
     cmd_impact,
+    cmd_pr,
     cmd_verify,
 )
 
@@ -119,4 +122,86 @@ def test_cli_compare_and_check(tmp_path: Path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "COMPATIBLE" in out
+
+
+def test_cli_git_status_and_diff(tmp_path: Path, capsys):
+    parser = _build_parser()
+    # 1. Non-git directory returns exit 2
+    non_git = tmp_path / "non_git"
+    non_git.mkdir()
+    args_status = parser.parse_args(["git-status", str(non_git), "--no-color"])
+    rc = cmd_git_status(args_status)
+    assert rc == 2
+
+    # 2. Git repo
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    import subprocess
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True, capture_output=True)
+    (repo / "openapi.yaml").write_text("openapi: 3.0.0", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+    args_status_ok = parser.parse_args(["git-status", str(repo), "--no-color"])
+    rc = cmd_git_status(args_status_ok)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Git Repository Status" in out
+
+    args_diff = parser.parse_args(["git-diff", str(repo), "--no-color"])
+    rc = cmd_git_diff(args_diff)
+    assert rc == 0
+
+
+def test_cli_pr_command(tmp_path: Path, capsys):
+    parser = _build_parser()
+    import subprocess
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    prod_dir = tmp_path / "payment-service" / "docs"
+    prod_dir.mkdir(parents=True)
+    (prod_dir / "openapi.yaml").write_text(
+        "openapi: 3.1.0\ninfo:\n  title: P\n  version: '1.4.0'\npaths:\n  /api/payments/{id}:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  id: {type: string}\n",
+        encoding="utf-8",
+    )
+    client_dir = tmp_path / "payment-client"
+    client_dir.mkdir()
+    (client_dir / "contracts").mkdir()
+    (client_dir / "contracts" / "payment-service.yaml").write_text(
+        "openapi: 3.1.0\npaths:\n  /api/payments/{id}:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  id: {type: string}\n",
+        encoding="utf-8",
+    )
+    (client_dir / "contractguard.yaml").write_text(
+        "service: payment-client\ndependencies:\n  - service: payment-service\n    consumer_contract: contracts/payment-service.yaml\n    producer_contract: ../payment-service/docs/openapi.yaml\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Text format
+    args_pr = parser.parse_args(["pr", str(tmp_path), "--no-color"])
+    rc = cmd_pr(args_pr)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "PR SAFE TO MERGE - READY" in out
+
+    # Markdown format with output file
+    out_md = tmp_path / "pr_report.md"
+    args_pr_md = parser.parse_args(["pr", str(tmp_path), "--format", "markdown", "--output", str(out_md)])
+    rc = cmd_pr(args_pr_md)
+    assert rc == 0
+    assert out_md.exists()
+    assert "# ContractGuard PR Analysis" in out_md.read_text(encoding="utf-8")
+
+    # JSON format
+    args_pr_json = parser.parse_args(["pr", str(tmp_path), "--format", "json"])
+    rc = cmd_pr(args_pr_json)
+    assert rc == 0
+    out_json = capsys.readouterr().out
+    assert '"verdict": "READY"' in out_json
+
 

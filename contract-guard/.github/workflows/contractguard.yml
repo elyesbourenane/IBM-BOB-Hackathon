@@ -1,0 +1,49 @@
+name: ContractGuard PR Safety Gate
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  contract-guard:
+    name: Verify Contract Compatibility & SemVer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history to allow diffing against base branch
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ContractGuard
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./contract-guard
+
+      - name: Run ContractGuard PR Analysis
+        run: |
+          # Compares current branch against target base branch
+          # Exit code 0 = READY (Compatible)
+          # Exit code 1 = BLOCKED (Breaking changes detected)
+          # Exit code 2 = Configuration or Git error
+          contract-guard pr . \
+            --base origin/${{ github.base_ref || 'main' }} \
+            --format markdown \
+            --output contractguard-pr.md
+
+      - name: Upload PR Evidence Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contractguard-evidence
+          path: |
+            contractguard-pr.md
+            contractguard-evidence.json
+            contractguard-report.md

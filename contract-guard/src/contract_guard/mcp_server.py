@@ -35,6 +35,7 @@ from .config import load_config
 from .discovery import discover_and_check, DiscoveryReport, ConsumerResult
 from .evidence import evaluate_release_gate, generate_evidence
 from .models import ComparisonReport, Finding
+from .pr import analyze_pr
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ TOOL_DISCOVER = "discover_and_check_consumers"
 TOOL_BLAST_RADIUS = "get_blast_radius"
 TOOL_ANALYZE = "analyze_contract_impact"
 TOOL_VERIFY_RELEASE = "verify_release_safety"
+TOOL_GIT_CHANGE = "analyze_git_change"
 
 TOOL_DEFINITION_COMPARE = {
     "name": TOOL_COMPARE,
@@ -228,6 +230,45 @@ TOOL_DEFINITION_VERIFY_RELEASE = {
                 "type": "string",
                 "description": (
                     "Optional directory path to write contractguard-evidence.json and contractguard-report.md."
+                ),
+            },
+        },
+    },
+}
+
+TOOL_DEFINITION_GIT_CHANGE = {
+    "name": TOOL_GIT_CHANGE,
+    "description": (
+        "Analyze the current Git change or PR for contract drift across consumers. "
+        "Deterministically inspects changed contract files, checks consumer compatibility, "
+        "calculates blast radius, and provides a SemVer recommendation and safety verdict."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "required": ["workspace_root"],
+        "properties": {
+            "workspace_root": {
+                "type": "string",
+                "description": (
+                    "Absolute or workspace-relative path to the repository/workspace directory."
+                ),
+            },
+            "base_ref": {
+                "type": "string",
+                "description": (
+                    "Optional Git base ref to compare against (e.g. 'origin/main', 'HEAD~1')."
+                ),
+            },
+            "producer_filter": {
+                "type": "string",
+                "description": (
+                    "Optional producer service name filter."
+                ),
+            },
+            "current_version": {
+                "type": "string",
+                "description": (
+                    "Optional current SemVer baseline (e.g. '1.4.0')."
                 ),
             },
         },
@@ -599,6 +640,60 @@ def _run_verify_release(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _run_analyze_git_change(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Execute the analyze_git_change tool.
+    Deterministically evaluates Git changes/PR, consumer impact, blast radius, and SemVer.
+    """
+    workspace_root = arguments.get("workspace_root", "")
+    if not workspace_root:
+        return {
+            "content": [{"type": "text", "text": "Missing required argument: workspace_root"}],
+            "isError": True,
+        }
+    base_ref: str | None = arguments.get("base_ref") or None
+    producer_filter: str | None = arguments.get("producer_filter") or None
+    current_version: str | None = arguments.get("current_version") or None
+
+    try:
+        report = analyze_pr(
+            workspace_root=workspace_root,
+            base_ref=base_ref,
+            producer_filter=producer_filter,
+            current_version=current_version,
+        )
+    except FileNotFoundError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Workspace root not found: {exc}"}],
+            "isError": True,
+        }
+    except NotADirectoryError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Not a directory: {exc}"}],
+            "isError": True,
+        }
+    except Exception as exc:  # pragma: no cover
+        return {
+            "content": [{"type": "text", "text": f"Unexpected error during Git change analysis: {exc}"}],
+            "isError": True,
+        }
+
+    return {
+        "content": [{"type": "text", "text": report.to_json()}],
+    }
+
+
+def handle_analyze_git_change(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Direct invocation handler for analyze_git_change tool.
+    Returns the parsed JSON response dict.
+    """
+    res = _run_analyze_git_change(arguments)
+    if res.get("isError"):
+        return res
+    return json.loads(res["content"][0]["text"])
+
+
 # ---------------------------------------------------------------------------
 # Request dispatcher
 # ---------------------------------------------------------------------------
@@ -636,6 +731,7 @@ def _dispatch(
                 TOOL_DEFINITION_BLAST_RADIUS,
                 TOOL_DEFINITION_ANALYZE,
                 TOOL_DEFINITION_VERIFY_RELEASE,
+                TOOL_DEFINITION_GIT_CHANGE,
             ]
         })
 
@@ -656,6 +752,8 @@ def _dispatch(
             result = _run_analyze(arguments, analyzer=analyzer)
         elif name == TOOL_VERIFY_RELEASE:
             result = _run_verify_release(arguments)
+        elif name == TOOL_GIT_CHANGE:
+            result = _run_analyze_git_change(arguments)
         else:
             return _error_response(req_id, -32602, f"Unknown tool: {name!r}")
         return _ok_response(req_id, result)

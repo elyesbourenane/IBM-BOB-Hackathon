@@ -11,7 +11,9 @@ from .comparator import Comparator
 from .config import load_config
 from .discovery import discover_and_check
 from .evidence import evaluate_release_gate, generate_evidence, ReleaseStatus
+from .git import inspect_git_status
 from .models import Severity
+from .pr import analyze_pr
 
 # ANSI helpers
 _RED = "\033[31m"
@@ -202,6 +204,91 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output directory for evidence files (default: .).",
     )
     evidence.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 8. git-status
+    git_status = sub.add_parser(
+        "git-status",
+        help="Inspect Git repository status and identify changed OpenAPI contracts.",
+    )
+    git_status.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    git_status.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 9. git-diff
+    git_diff = sub.add_parser(
+        "git-diff",
+        help="Inspect files and contracts changed between Git base ref and working tree.",
+    )
+    git_diff.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    git_diff.add_argument(
+        "--base",
+        default=None,
+        help="Git base ref (e.g. origin/main, HEAD~1).",
+    )
+    git_diff.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 10. pr
+    pr = sub.add_parser(
+        "pr",
+        help="Analyze Git changes/PR for contract drift, blast radius, and SemVer recommendation.",
+    )
+    pr.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    pr.add_argument(
+        "--base",
+        default=None,
+        help="Git base ref to compare against (e.g. origin/main, HEAD~1).",
+    )
+    pr.add_argument(
+        "--producer",
+        default=None,
+        help="Filter by producer service name.",
+    )
+    pr.add_argument(
+        "--version",
+        default=None,
+        help="Current/baseline version for SemVer calculation (e.g. 1.4.0).",
+    )
+    pr.add_argument(
+        "--format",
+        choices=["text", "json", "markdown"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    pr.add_argument(
+        "--output",
+        default=None,
+        help="File path to write output (e.g. contractguard-pr.md).",
+    )
+    pr.add_argument(
         "--no-color",
         action="store_true",
         default=False,
@@ -530,6 +617,157 @@ def cmd_evidence(args: argparse.Namespace) -> int:
     return 0 if verification.is_ready else 1
 
 
+def cmd_git_status(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    status = inspect_git_status(args.workspace)
+    if not status.is_repo:
+        print(_colorize(f"ERROR: {status.error}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    print(_colorize("\nGit Repository Status", _BOLD, no_color=nc))
+    print(f"  Repository Root : {status.repo_root}")
+    print(f"  Current SHA     : {status.current_sha or 'N/A'}")
+    print(f"  Changed Files   : {len(status.changed_files)}")
+
+    print(_colorize(f"\nChanged Contracts ({len(status.changed_contracts)}):", _CYAN, _BOLD, no_color=nc))
+    if not status.changed_contracts:
+        print("  None")
+    else:
+        for c in status.changed_contracts:
+            print(f"  - {c}")
+
+    print(_colorize(f"\nOther Changed Files ({len(status.other_changed_files)}):", _BOLD, no_color=nc))
+    if not status.other_changed_files:
+        print("  None")
+    else:
+        for f in status.other_changed_files[:10]:
+            print(f"  - {f}")
+        if len(status.other_changed_files) > 10:
+            print(f"  ... and {len(status.other_changed_files) - 10} more")
+    print()
+    return 0
+
+
+def cmd_git_diff(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    status = inspect_git_status(args.workspace, base_ref=args.base)
+    if not status.is_repo or status.error:
+        print(_colorize(f"ERROR: {status.error}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    base_label = args.base if args.base else "working tree / HEAD"
+    print(_colorize(f"\nGit Diff against {base_label}", _BOLD, no_color=nc))
+    print(f"  Repository Root : {status.repo_root}")
+    print(f"  Current SHA     : {status.current_sha or 'N/A'}")
+    print(f"  Total Changed   : {len(status.changed_files)}")
+
+    print(_colorize(f"\nChanged Contracts ({len(status.changed_contracts)}):", _CYAN, _BOLD, no_color=nc))
+    if not status.changed_contracts:
+        print("  None")
+    else:
+        for c in status.changed_contracts:
+            print(f"  - {c}")
+    print()
+    return 0
+
+
+def cmd_pr(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    try:
+        pr_report = analyze_pr(
+            args.workspace,
+            base_ref=args.base,
+            producer_filter=args.producer,
+            current_version=args.version,
+        )
+    except Exception as exc:
+        print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    if pr_report.git_error and not pr_report.commit:
+        print(_colorize(f"ERROR: {pr_report.git_error}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    # Write output to file if requested
+    if args.output:
+        out_p = Path(args.output).resolve()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        if args.format == "json":
+            out_p.write_text(pr_report.to_json(), encoding="utf-8")
+        elif args.format == "markdown":
+            out_p.write_text(pr_report.to_markdown(), encoding="utf-8")
+        else:
+            out_p.write_text(pr_report.to_markdown(), encoding="utf-8")
+
+    if args.format == "json":
+        print(pr_report.to_json())
+        return 0 if pr_report.is_ready else 1
+
+    if args.format == "markdown":
+        print(pr_report.to_markdown())
+        return 0 if pr_report.is_ready else 1
+
+    # Text format
+    if pr_report.is_ready:
+        banner = _colorize("[OK] PR SAFE TO MERGE - READY", _GREEN, _BOLD, no_color=nc)
+    else:
+        banner = _colorize("[BLOCKED] PR CONTAINS BREAKING API CHANGES", _RED, _BOLD, no_color=nc)
+
+    print(f"\n{banner}\n")
+    print(_colorize("CONTRACTGUARD -- PR ANALYSIS", _BOLD, no_color=nc))
+    print(f"  Repository        : {pr_report.repository or 'N/A'}")
+    print(f"  Commit            : {pr_report.commit[:7] if pr_report.commit else 'working tree'}")
+    if pr_report.base:
+        print(f"  Base Ref          : {pr_report.base}")
+
+    print(_colorize("\nChanged Contracts:", _CYAN, _BOLD, no_color=nc))
+    if not pr_report.changed_contracts:
+        print("  (None detected by git)")
+    else:
+        for c in pr_report.changed_contracts:
+            print(f"  - {c}")
+
+    print(_colorize(f"\nConsumers Checked: {len(pr_report.consumers_checked)}", _BOLD, no_color=nc))
+    print(f"  Compatible        : {len(pr_report.compatible_consumers)}")
+    print(f"  Affected          : {len(pr_report.affected_consumers)}")
+    print(f"  Breaking Changes  : {len(pr_report.breaking_findings)}")
+
+    if pr_report.breaking_findings:
+        print(_colorize("\nBreaking Changes:", _RED, _BOLD, no_color=nc))
+        for f in pr_report.breaking_findings:
+            ep = f.get("endpoint", "N/A")
+            field_name = f.get("affected_field", "N/A")
+            ck = f.get("change_kind", "N/A")
+            det = f.get("detail", "")
+            c_svc = f.get("consumer_service", "N/A")
+            print(f"  Endpoint : {ep}")
+            print(f"  Field    : {field_name}")
+            print(f"  Change   : {ck}")
+            print(f"  Consumer : {c_svc}")
+            if det:
+                print(f"  Detail   : {det}")
+            print()
+
+    if pr_report.affected_consumers:
+        print(_colorize("Affected Consumers:", _RED, _BOLD, no_color=nc))
+        for c in pr_report.affected_consumers:
+            print(f"  [X] {c}")
+        print()
+
+    sem = pr_report.semver
+    print(_colorize("Recommended SemVer:", _BOLD, no_color=nc))
+    if sem.current_version and sem.recommended_version:
+        print(f"  {sem.current_version} -> {_colorize(sem.recommended_version, _BOLD, no_color=nc)} ({sem.bump.upper()})")
+    else:
+        print(f"  Bump  : {_colorize(sem.bump.upper(), _BOLD, no_color=nc)}")
+    print(f"  Reason: {sem.reason}")
+
+    print(f"\nVerdict:\n  {_colorize(pr_report.verdict, _GREEN if pr_report.is_ready else _RED, _BOLD, no_color=nc)}")
+    print(f"\nEvidence ID:\n  {pr_report.evidence_id}\n")
+
+    return 0 if pr_report.is_ready else 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -547,6 +785,12 @@ def main() -> None:
         sys.exit(cmd_verify(args))
     elif args.command == "evidence":
         sys.exit(cmd_evidence(args))
+    elif args.command == "git-status":
+        sys.exit(cmd_git_status(args))
+    elif args.command == "git-diff":
+        sys.exit(cmd_git_diff(args))
+    elif args.command == "pr":
+        sys.exit(cmd_pr(args))
 
 
 if __name__ == "__main__":

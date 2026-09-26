@@ -18,6 +18,7 @@ from contract_guard.mcp_server import (
     TOOL_BLAST_RADIUS,
     TOOL_ANALYZE,
     TOOL_VERIFY_RELEASE,
+    TOOL_GIT_CHANGE,
 )
 
 
@@ -33,6 +34,7 @@ def test_mcp_tools_list():
     assert TOOL_BLAST_RADIUS in tool_names
     assert TOOL_ANALYZE in tool_names
     assert TOOL_VERIFY_RELEASE in tool_names
+    assert TOOL_GIT_CHANGE in tool_names
 
 
 def test_mcp_call_unknown_tool():
@@ -214,4 +216,42 @@ def test_mcp_lifecycle():
     ping_resp = _dispatch(ping_req)
     assert ping_resp is not None
     assert ping_resp["result"] == {}
+
+
+def test_mcp_call_analyze_git_change(tmp_path: Path):
+    prod_dir = tmp_path / "payment-service" / "docs"
+    prod_dir.mkdir(parents=True)
+    (prod_dir / "openapi.yaml").write_text(
+        "openapi: 3.1.0\npaths:\n  /api/payments/{id}:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  id: {type: string}\n",
+        encoding="utf-8",
+    )
+    client_dir = tmp_path / "payment-client"
+    client_dir.mkdir()
+    (client_dir / "contracts").mkdir()
+    (client_dir / "contracts" / "payment-service.yaml").write_text(
+        "openapi: 3.1.0\npaths:\n  /api/payments/{id}:\n    get:\n      responses:\n        '200':\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  id: {type: string}\n",
+        encoding="utf-8",
+    )
+    (client_dir / "contractguard.yaml").write_text(
+        "service: payment-client\ndependencies:\n  - service: payment-service\n    consumer_contract: contracts/payment-service.yaml\n    producer_contract: ../payment-service/docs/openapi.yaml\n",
+        encoding="utf-8",
+    )
+
+    req = {
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": {
+            "name": TOOL_GIT_CHANGE,
+            "arguments": {"workspace_root": str(tmp_path)},
+        },
+    }
+    resp = _dispatch(req)
+    assert resp is not None
+    assert "result" in resp
+    data = json.loads(resp["result"]["content"][0]["text"])
+    assert data["verdict"] == "READY"
+    assert data["consumers_checked"] == 1
+    assert data["semver"]["bump"] == "none"
+
 
