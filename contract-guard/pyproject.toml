@@ -10,11 +10,13 @@ requires-python = ">=3.9"
 dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
+    "flask>=3.0",
 ]
 
 [project.scripts]
 contract-guard = "contract_guard.__main__:main"
 contract-guard-mcp = "contract_guard.mcp_server:main"
+contract-guard-ui = "contract_guard.web_server:main"
 
 [project.optional-dependencies]
 dev = [

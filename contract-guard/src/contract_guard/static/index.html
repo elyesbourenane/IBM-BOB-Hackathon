@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContractGuard Command Center</title>
+    <meta name="description" content="ContractGuard: Deterministic API contract change safety verification for IBM Bob 2.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* =====================================================================
+           DESIGN SYSTEM
+           ===================================================================== */
+        :root {
+            --bg-0: #06090f;
+            --bg-1: #0b1120;
+            --bg-2: #111827;
+            --bg-3: #1a2332;
+            --bg-4: #1e293b;
+            --bg-input: #0f172a;
+            --border-1: #1e293b;
+            --border-2: #334155;
+            --border-3: #475569;
+
+            --text-0: #f8fafc;
+            --text-1: #e2e8f0;
+            --text-2: #94a3b8;
+            --text-3: #64748b;
+            --text-4: #475569;
+
+            --blue: #3b82f6;
+            --blue-dim: rgba(59,130,246,0.12);
+            --blue-glow: rgba(59,130,246,0.25);
+            --cyan: #22d3ee;
+            --cyan-dim: rgba(34,211,238,0.10);
+            --purple: #8b5cf6;
+            --purple-dim: rgba(139,92,246,0.12);
+
+            --red: #ef4444;
+            --red-dim: rgba(239,68,68,0.10);
+            --red-border: rgba(239,68,68,0.30);
+            --amber: #f59e0b;
+            --amber-dim: rgba(245,158,11,0.10);
+            --amber-border: rgba(245,158,11,0.30);
+            --green: #10b981;
+            --green-dim: rgba(16,185,129,0.10);
+            --green-border: rgba(16,185,129,0.30);
+
+            --font: 'Inter', -apple-system, sans-serif;
+            --mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: var(--font);
+            background: var(--bg-0);
+            color: var(--text-1);
+            min-height: 100vh;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* =====================================================================
+           HEADER
+           ===================================================================== */
+        .header {
+            background: linear-gradient(135deg, #0f1b33 0%, #0b1120 60%, #140e26 100%);
+            border-bottom: 1px solid var(--border-1);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-inner {
+            max-width: 1400px; margin: 0 auto;
+            padding: 14px 28px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .header-brand { display: flex; align-items: center; gap: 14px; }
+        .header-logo {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            border-radius: 8px;
+            display: grid; place-items: center;
+            font-weight: 900; font-size: 13px; color: #fff;
+            box-shadow: 0 0 20px var(--blue-glow);
+            letter-spacing: -0.5px;
+        }
+        .header-title {
+            font-size: 18px; font-weight: 700; letter-spacing: -0.5px;
+        }
+        .header-title span { color: var(--blue); }
+        .header-sub {
+            font-size: 11px; color: var(--text-3); margin-top: 1px;
+            letter-spacing: 0.3px;
+        }
+        .header-right {
+            text-align: right; font-size: 11px;
+            font-family: var(--mono); color: var(--text-4);
+            line-height: 1.6; letter-spacing: 0.2px;
+        }
+        .header-right em { color: var(--cyan); font-style: normal; }
+
+        /* =====================================================================
+           PIPELINE — the core visual story
+           ===================================================================== */
+        .pipeline-wrap {
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border-1);
+            overflow-x: auto;
+        }
+        .pipeline {
+            max-width: 1400px; margin: 0 auto;
+            padding: 0 28px;
+            display: flex; align-items: stretch;
+            min-height: 54px;
+        }
+        .pipe-stage {
+            flex: 1; min-width: 0;
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px;
+            padding: 0 8px;
+            font-size: 12px; font-weight: 600;
+            color: var(--text-4);
+            cursor: pointer;
+            position: relative;
+            transition: color 0.25s var(--ease), background 0.25s var(--ease);
+            user-select: none;
+            white-space: nowrap;
+            border: none; background: none;
+            letter-spacing: 0.3px;
+        }
+        .pipe-stage:hover { color: var(--text-2); background: rgba(255,255,255,0.02); }
+        .pipe-stage.active { color: var(--blue); }
+        .pipe-stage.active::after {
+            content: '';
+            position: absolute; bottom: 0; left: 12px; right: 12px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--blue), var(--purple));
+            border-radius: 2px 2px 0 0;
+        }
+        /* completed stage */
+        .pipe-stage.done { color: var(--green); }
+        .pipe-stage.done::after {
+            content: ''; position: absolute; bottom: 0; left: 12px; right: 12px;
+            height: 2px; background: var(--green); border-radius: 2px 2px 0 0;
+            opacity: 0.5;
+        }
+        .pipe-icon { font-size: 15px; flex-shrink: 0; }
+        .pipe-arrow {
+            color: var(--text-4); font-size: 10px; flex-shrink: 0;
+            margin: 0 -2px; opacity: 0.4;
+        }
+        .pipe-num {
+            width: 18px; height: 18px;
+            border-radius: 50%; border: 1.5px solid currentColor;
+            display: grid; place-items: center;
+            font-size: 10px; font-family: var(--mono);
+            flex-shrink: 0; line-height: 1;
+        }
+        .pipe-stage.done .pipe-num {
+            background: var(--green); border-color: var(--green); color: #fff;
+        }
+        .pipe-stage.active .pipe-num {
+            background: var(--blue); border-color: var(--blue); color: #fff;
+        }
+
+        /* =====================================================================
+           MAIN
+           ===================================================================== */
+        .main {
+            max-width: 1400px; margin: 0 auto;
+            padding: 24px 28px 48px;
+        }
+        .tab-panel { display: none; animation: panelIn 0.35s var(--ease); }
+        .tab-panel.active { display: block; }
+        @keyframes panelIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* =====================================================================
+           CARDS
+           ===================================================================== */
+        .card {
+            background: var(--bg-2);
+            border: 1px solid var(--border-1);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s var(--ease);
+        }
+        .card:hover { border-color: var(--border-2); }
+        .card-head {
+            padding: 16px 22px;
+            border-bottom: 1px solid var(--border-1);
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px;
+        }
+        .card-head h2 {
+            font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .card-body { padding: 22px; }
+
+        /* =====================================================================
+           BADGES
+           ===================================================================== */
+        .badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 3px 10px; border-radius: 20px;
+            font-size: 11px; font-weight: 700;
+            font-family: var(--mono); letter-spacing: 0.6px;
+        }
+        .badge-breaking { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+        .badge-blocked  { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
+        .badge-ready    { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+        .badge-compat   { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+        .badge-sim      { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); }
+        .badge-neutral  { background: rgba(148,163,184,0.08); color: var(--text-2); border: 1px solid rgba(148,163,184,0.15); }
+        .badge-major    { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+        .badge-minor    { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
+        .badge-patch    { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
+
+        /* =====================================================================
+           STATUS BANNERS
+           ===================================================================== */
+        .banner {
+            padding: 20px 24px;
+            border-radius: 12px;
+            display: flex; align-items: center; gap: 18px;
+            margin-bottom: 22px;
+            animation: cardIn 0.35s var(--ease);
+        }
+        .banner-sim {
+            background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(139,92,246,0.03));
+            border: 1px solid rgba(139,92,246,0.25);
+        }
+        .banner-break {
+            background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.03));
+            border: 1px solid var(--red-border);
+        }
+        .banner-ready {
+            background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03));
+            border: 1px solid var(--green-border);
+        }
+        .banner-blocked {
+            background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.03));
+            border: 1px solid var(--amber-border);
+        }
+        .banner-icon { font-size: 36px; flex-shrink: 0; }
+        .banner h3 { font-size: 16px; font-weight: 700; }
+        .banner p { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+
+        /* =====================================================================
+           FORMS
+           ===================================================================== */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px; margin-bottom: 16px;
+        }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-label {
+            font-size: 10px; font-weight: 600; color: var(--text-3);
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .form-input, .form-select {
+            background: var(--bg-input);
+            border: 1px solid var(--border-1);
+            border-radius: 6px;
+            padding: 9px 12px;
+            font-size: 13px; font-family: var(--mono);
+            color: var(--text-0);
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+        .form-input:focus, .form-select:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px var(--blue-dim);
+        }
+        .form-select {
+            cursor: pointer; appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%2364748b' d='M5 7L1 3h8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+        }
+        .form-select option { background: var(--bg-2); }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+            padding: 9px 20px; border-radius: 6px;
+            font-size: 13px; font-weight: 600;
+            cursor: pointer; border: none;
+            transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+            font-family: var(--font);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: #fff;
+            box-shadow: 0 0 16px var(--blue-glow);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 28px var(--blue-glow); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .btn-ghost {
+            background: transparent; color: var(--text-2);
+            border: 1px solid var(--border-2);
+        }
+        .btn-ghost:hover { color: var(--text-0); background: rgba(255,255,255,0.03); }
+
+        /* =====================================================================
+           STAT GRID
+           ===================================================================== */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px; margin-bottom: 22px;
+        }
+        .stat {
+            background: var(--bg-2);
+            border: 1px solid var(--border-1);
+            border-radius: 10px;
+            padding: 16px 18px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .stat:hover { border-color: var(--border-2); transform: translateY(-2px); }
+        .stat-label {
+            font-size: 10px; color: var(--text-4);
+            text-transform: uppercase; letter-spacing: 0.8px;
+            font-weight: 600; margin-bottom: 6px;
+        }
+        .stat-val {
+            font-size: 26px; font-weight: 800;
+            font-family: var(--mono); line-height: 1;
+        }
+        .stat-val.red { color: var(--red); }
+        .stat-val.green { color: var(--green); }
+        .stat-val.amber { color: var(--amber); }
+        .stat-val.white { color: var(--text-0); }
+        .stat-note {
+            font-size: 11px; color: var(--text-4); margin-top: 5px;
+        }
+
+        /* =====================================================================
+           DEPENDENCY GRAPH (Blast Radius visual)
+           ===================================================================== */
+        .graph-canvas {
+            padding: 36px 24px;
+            display: flex; flex-direction: column;
+            align-items: center; gap: 0;
+        }
+        .g-node {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 22px;
+            background: var(--bg-3);
+            border: 2px solid var(--border-1);
+            border-radius: 10px;
+            min-width: 240px;
+            position: relative; z-index: 2;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        .g-node.producer {
+            border-color: var(--blue);
+            box-shadow: 0 0 24px var(--blue-glow);
+            background: linear-gradient(135deg, rgba(59,130,246,0.06), var(--bg-3));
+        }
+        .g-node.n-break {
+            border-color: var(--red);
+            box-shadow: 0 0 18px rgba(239,68,68,0.15);
+        }
+        .g-node.n-ok {
+            border-color: var(--green);
+            box-shadow: 0 0 18px rgba(16,185,129,0.12);
+        }
+        .g-node-icon { font-size: 20px; }
+        .g-node-name { font-weight: 600; font-size: 13px; }
+        .g-node-label {
+            font-size: 10px; color: var(--text-3);
+            font-family: var(--mono); text-transform: uppercase;
+            letter-spacing: 0.6px; margin-top: 1px;
+        }
+        .g-edge {
+            width: 2px; height: 30px; position: relative;
+        }
+        .g-edge::before {
+            content: '';
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 2px; height: 100%; background: var(--border-2);
+        }
+        .g-edge::after {
+            content: '▼'; position: absolute; bottom: -5px; left: 50%;
+            transform: translateX(-50%); font-size: 9px; color: var(--border-2);
+        }
+        .g-consumers {
+            display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+        }
+        .g-branch {
+            display: flex; flex-direction: column; align-items: center;
+            animation: cardIn 0.4s var(--ease) backwards;
+        }
+        .g-branch:nth-child(1) { animation-delay: 0.05s; }
+        .g-branch:nth-child(2) { animation-delay: 0.12s; }
+        .g-branch:nth-child(3) { animation-delay: 0.19s; }
+        .g-branch:nth-child(4) { animation-delay: 0.26s; }
+
+        .g-node.clickable { cursor: pointer; }
+        .g-node.clickable:hover { border-width: 2.5px; }
+
+        /* =====================================================================
+           EXPANDABLE SECTIONS
+           ===================================================================== */
+        .expander {
+            border: 1px solid var(--border-1); border-radius: 10px;
+            margin-bottom: 10px; overflow: hidden;
+        }
+        .expander-head {
+            padding: 13px 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: space-between;
+            background: var(--bg-1);
+            transition: background 0.15s;
+        }
+        .expander-head:hover { background: var(--bg-2); }
+        .expander-head .left { display: flex; align-items: center; gap: 10px; }
+        .expander-arr {
+            transition: transform 0.2s var(--ease);
+            color: var(--text-4); font-size: 11px;
+        }
+        .expander.open .expander-arr { transform: rotate(180deg); }
+        .expander-body {
+            max-height: 0; overflow: hidden;
+            transition: max-height 0.35s var(--ease);
+        }
+        .expander.open .expander-body { max-height: 2000px; }
+        .expander-inner {
+            padding: 16px 18px; border-top: 1px solid var(--border-1);
+        }
+
+        /* =====================================================================
+           TIMELINE (verification loop)
+           ===================================================================== */
+        .timeline { position: relative; padding-left: 30px; }
+        .timeline::before {
+            content: ''; position: absolute;
+            left: 10px; top: 0; bottom: 0;
+            width: 2px; background: var(--border-1);
+        }
+        .tl-item {
+            position: relative;
+            padding: 16px 0 16px 22px;
+            animation: cardIn 0.4s var(--ease);
+        }
+        .tl-dot {
+            position: absolute; left: -25px; top: 20px;
+            width: 12px; height: 12px; border-radius: 50%;
+            border: 2px solid var(--border-2); background: var(--bg-0);
+            z-index: 2;
+        }
+        .tl-dot.ok  { border-color: var(--green); background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+        .tl-dot.fail { border-color: var(--red); background: var(--red); box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+        .tl-dot.now  { border-color: var(--blue); background: var(--blue); box-shadow: 0 0 10px var(--blue-glow); }
+        .tl-card {
+            background: var(--bg-2);
+            border: 1px solid var(--border-1);
+            border-radius: 10px;
+            padding: 16px 20px;
+        }
+        .tl-title {
+            font-size: 13px; font-weight: 600;
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 6px;
+        }
+        .tl-body { font-size: 13px; color: var(--text-2); }
+
+        /* =====================================================================
+           DATA TABLE
+           ===================================================================== */
+        .dtable { width: 100%; border-collapse: collapse; }
+        .dtable th {
+            font-size: 10px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.8px; color: var(--text-4);
+            padding: 8px 14px; text-align: left;
+            border-bottom: 1px solid var(--border-1);
+        }
+        .dtable td {
+            padding: 10px 14px; font-size: 12px;
+            border-bottom: 1px solid rgba(30,41,59,0.4);
+            vertical-align: top;
+        }
+        .dtable tr:hover td { background: rgba(255,255,255,0.015); }
+
+        /* =====================================================================
+           KV PAIRS (passport-style)
+           ===================================================================== */
+        .kv {
+            display: grid;
+            grid-template-columns: 170px 1fr;
+            gap: 6px 18px; font-size: 13px;
+        }
+        .kv-k { color: var(--text-3); font-weight: 500; }
+        .kv-v { color: var(--text-0); font-family: var(--mono); font-size: 12px; }
+
+        /* =====================================================================
+           CODE REFS / FILE LISTS
+           ===================================================================== */
+        .cref {
+            font-family: var(--mono); font-size: 11px;
+            background: rgba(59,130,246,0.07);
+            color: var(--cyan); padding: 2px 7px;
+            border-radius: 4px; display: inline-block;
+        }
+        .flist { list-style: none; padding: 0; }
+        .flist li {
+            padding: 4px 0; font-family: var(--mono); font-size: 11px;
+            color: var(--text-2); display: flex; align-items: center; gap: 6px;
+        }
+
+        /* =====================================================================
+           ARCH NOTE (Bob / ContractGuard roles)
+           ===================================================================== */
+        .arch-note {
+            display: flex; gap: 2px; margin-bottom: 20px;
+            border-radius: 10px; overflow: hidden;
+            font-size: 12px; text-align: center;
+            animation: cardIn 0.4s var(--ease);
+        }
+        .arch-note-box {
+            flex: 1; padding: 14px 16px;
+        }
+        .arch-note-box.bob {
+            background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.03));
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 10px 0 0 10px;
+        }
+        .arch-note-box.cg {
+            background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03));
+            border: 1px solid rgba(16,185,129,0.2);
+            border-radius: 0 10px 10px 0;
+        }
+        .arch-note-box strong {
+            display: block; margin-bottom: 3px;
+            font-size: 13px;
+        }
+        .arch-note-box.bob strong { color: var(--blue); }
+        .arch-note-box.cg strong  { color: var(--green); }
+        .arch-note-box span { color: var(--text-3); }
+
+        /* =====================================================================
+           PASSPORT SECTION HEADER
+           ===================================================================== */
+        .pass-sec {
+            font-size: 12px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.2px;
+            color: var(--text-4);
+            margin: 24px 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-1);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .pass-sec:first-child { margin-top: 0; }
+
+        /* =====================================================================
+           LOADING / EMPTY
+           ===================================================================== */
+        .loader {
+            display: flex; align-items: center; justify-content: center;
+            gap: 10px; padding: 48px 0; color: var(--text-3); font-size: 13px;
+        }
+        .spin {
+            width: 16px; height: 16px;
+            border: 2px solid var(--border-2);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* =====================================================================
+           HERO QUESTION (on What-If)
+           ===================================================================== */
+        .hero-q {
+            text-align: center;
+            padding: 8px 0 22px;
+        }
+        .hero-q h1 {
+            font-size: 22px; font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, var(--text-0), var(--text-2));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero-q p {
+            font-size: 13px; color: var(--text-3); margin-top: 4px;
+        }
+
+        /* =====================================================================
+           PROPOSED CHANGE BLOCK (What-If result)
+           ===================================================================== */
+        .change-block {
+            background: var(--bg-1);
+            border: 1px solid var(--border-1);
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 18px;
+            display: flex; align-items: center; gap: 20px;
+            flex-wrap: wrap;
+            animation: cardIn 0.35s var(--ease);
+        }
+        .change-endpoint {
+            font-family: var(--mono); font-size: 14px;
+            font-weight: 600; color: var(--cyan);
+            padding: 4px 12px;
+            background: var(--cyan-dim);
+            border-radius: 6px;
+        }
+        .change-arrow {
+            font-size: 18px; color: var(--red);
+            font-weight: 700;
+        }
+        .change-field {
+            font-family: var(--mono); font-size: 14px;
+        }
+        .change-field .old { color: var(--red); text-decoration: line-through; opacity: 0.8; }
+        .change-field .new { color: var(--green); }
+        .change-kind {
+            font-size: 11px; font-family: var(--mono);
+            color: var(--text-3); text-transform: uppercase;
+        }
+
+        /* progress bar for verification */
+        .progress-bar {
+            height: 6px; background: var(--border-1); border-radius: 3px;
+            overflow: hidden; margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%; border-radius: 3px;
+            transition: width 0.6s var(--ease);
+        }
+        .progress-fill.ok { background: linear-gradient(90deg, var(--green), #34d399); }
+        .progress-fill.warn { background: linear-gradient(90deg, var(--amber), #fbbf24); }
+
+        /* responsive */
+        @media (max-width: 768px) {
+            .header-inner { padding: 12px 16px; }
+            .header-right { display: none; }
+            .pipeline { overflow-x: auto; }
+            .pipe-stage { min-width: 110px; font-size: 11px; }
+            .main { padding: 16px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: 1fr 1fr; }
+            .kv { grid-template-columns: 1fr; }
+        }
+
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+
+    <!-- ===== HEADER ===== -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="header-brand">
+                <div class="header-logo">CG</div>
+                <div>
+                    <div class="header-title">Contract<span>Guard</span></div>
+                    <div class="header-sub">Deterministic API Contract Safety · IBM Bob 2.0</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <em>AI reasons.</em> Deterministic checks decide.<br>
+                <em>Bob executes.</em> Deterministic verification proves.
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== PIPELINE ===== -->
+    <div class="pipeline-wrap">
+        <div class="pipeline" id="pipeline">
+            <button class="pipe-stage active" data-tab="whatif">
+                <span class="pipe-num">1</span>
+                <span>What-If</span>
+            </button>
+            <span class="pipe-arrow">→</span>
+            <button class="pipe-stage" data-tab="blast">
+                <span class="pipe-num">2</span>
+                <span>Blast Radius</span>
+            </button>
+            <span class="pipe-arrow">→</span>
+            <button class="pipe-stage" data-tab="mission">
+                <span class="pipe-num">3</span>
+                <span>Repair Mission</span>
+            </button>
+            <span class="pipe-arrow">→</span>
+            <button class="pipe-stage" data-tab="verify">
+                <span class="pipe-num">4</span>
+                <span>Verification</span>
+            </button>
+            <span class="pipe-arrow">→</span>
+            <button class="pipe-stage" data-tab="passport">
+                <span class="pipe-num">5</span>
+                <span>Passport</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== MAIN ===== -->
+    <main class="main">
+
+        <!-- ============== 1. WHAT-IF ============== -->
+        <div class="tab-panel active" id="panel-whatif">
+
+            <div class="hero-q">
+                <h1>Your API changed. Did every consumer change with it?</h1>
+                <p>Simulate a proposed contract change — without modifying a single file.</p>
+            </div>
+
+            <div class="card" style="margin-bottom:22px;">
+                <div class="card-head">
+                    <h2>Proposed Change</h2>
+                    <span class="badge badge-sim">SIMULATION · NOT APPLIED</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Producer</label>
+                            <input class="form-input" id="wi-producer" value="payment-service">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Endpoint</label>
+                            <input class="form-input" id="wi-endpoint" value="GET /api/payments/{id}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Change Kind</label>
+                            <select class="form-select" id="wi-change-kind">
+                                <option value="field_renamed">Field Renamed</option>
+                                <option value="field_removed">Field Removed</option>
+                                <option value="endpoint_removed">Endpoint Removed</option>
+                                <option value="field_optional_added">Field Added (Optional)</option>
+                                <option value="field_required_added">Field Added (Required)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Field</label>
+                            <input class="form-input" id="wi-field" value="paymentAmount">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">New Value</label>
+                            <input class="form-input" id="wi-new-field" value="totalAmount">
+                        </div>
+                        <div class="form-group" style="justify-content:flex-end;">
+                            <button class="btn btn-primary" id="btn-whatif" onclick="runWhatIf()">
+                                ⚡ Run What-If
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="whatif-result"></div>
+        </div>
+
+        <!-- ============== 2. BLAST RADIUS ============== -->
+        <div class="tab-panel" id="panel-blast">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;max-width:280px;">
+                    <label class="form-label">Producer</label>
+                    <input class="form-input" id="br-producer" value="payment-service">
+                </div>
+                <button class="btn btn-primary" style="margin-top:18px;" onclick="loadBlastRadius()">
+                    💥 Analyze
+                </button>
+            </div>
+            <div id="blast-result"></div>
+        </div>
+
+        <!-- ============== 3. REPAIR MISSION ============== -->
+        <div class="tab-panel" id="panel-mission">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;max-width:280px;">
+                    <label class="form-label">Producer</label>
+                    <input class="form-input" id="rm-producer" value="payment-service">
+                </div>
+                <button class="btn btn-primary" style="margin-top:18px;" onclick="loadMission()">
+                    🎯 Generate Mission
+                </button>
+            </div>
+            <div id="mission-result"></div>
+        </div>
+
+        <!-- ============== 4. VERIFICATION ============== -->
+        <div class="tab-panel" id="panel-verify">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;max-width:280px;">
+                    <label class="form-label">Producer</label>
+                    <input class="form-input" id="vr-producer" value="payment-service">
+                </div>
+                <div class="form-group" style="max-width:140px;">
+                    <label class="form-label">Tests</label>
+                    <select class="form-select" id="vr-test-status">
+                        <option value="PASS">PASS</option>
+                        <option value="FAIL">FAIL</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" style="margin-top:18px;" onclick="loadVerification()">
+                    ✅ Verify
+                </button>
+            </div>
+            <div id="verify-result"></div>
+        </div>
+
+        <!-- ============== 5. CHANGE PASSPORT ============== -->
+        <div class="tab-panel" id="panel-passport">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;max-width:280px;">
+                    <label class="form-label">Producer</label>
+                    <input class="form-input" id="pp-producer" value="payment-service">
+                </div>
+                <button class="btn btn-primary" style="margin-top:18px;" onclick="loadPassport()">
+                    📋 Generate Passport
+                </button>
+            </div>
+            <div id="passport-result"></div>
+        </div>
+
+    </main>
+</div>
+
+<script>
+/* =====================================================================
+   CONTRACTGUARD COMMAND CENTER — FRONTEND
+   ===================================================================== */
+
+const STAGES = ['whatif','blast','mission','verify','passport'];
+let completedStages = new Set();
+
+// ─── Pipeline + Tab Switching ───
+document.querySelectorAll('.pipe-stage').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(tab) {
+    document.querySelectorAll('.pipe-stage').forEach(s => {
+        s.classList.remove('active');
+        if (completedStages.has(s.dataset.tab)) s.classList.add('done');
+        else s.classList.remove('done');
+    });
+    const active = document.querySelector(`.pipe-stage[data-tab="${tab}"]`);
+    if (active) { active.classList.add('active'); active.classList.remove('done'); }
+
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('panel-' + tab);
+    if (panel) panel.classList.add('active');
+}
+
+function markDone(tab) {
+    completedStages.add(tab);
+    const el = document.querySelector(`.pipe-stage[data-tab="${tab}"]`);
+    if (el && !el.classList.contains('active')) el.classList.add('done');
+}
+
+// ─── Helpers ───
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function loading(id) {
+    document.getElementById(id).innerHTML = '<div class="loader"><div class="spin"></div>Running deterministic analysis…</div>';
+}
+function error(id, msg) {
+    document.getElementById(id).innerHTML = `
+        <div class="banner banner-break">
+            <div class="banner-icon">⚠️</div>
+            <div><h3>Error</h3><p>${esc(msg)}</p></div>
+        </div>`;
+}
+function toggleExp(el) { el.closest('.expander').classList.toggle('open'); }
+
+function fileList(title, items, icon) {
+    if (!items?.length) return '';
+    return `<div style="margin-top:10px;">
+        <div style="font-size:10px;color:var(--text-4);font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">${title}</div>
+        <ul class="flist">${items.map(f => `<li>${icon} <span class="cref">${esc(f)}</span></li>`).join('')}</ul>
+    </div>`;
+}
+
+function semverBadge(bump) {
+    const b = (bump||'').toUpperCase();
+    const cls = b === 'MAJOR' ? 'badge-major' : b === 'MINOR' ? 'badge-minor' : b === 'PATCH' ? 'badge-patch' : 'badge-neutral';
+    return `<span class="badge ${cls}">${b || 'NONE'}</span>`;
+}
+
+/* =====================================================================
+   1. WHAT-IF
+   ===================================================================== */
+async function runWhatIf() {
+    const btn = document.getElementById('btn-whatif');
+    btn.disabled = true; btn.textContent = '⏳ Simulating…';
+    loading('whatif-result');
+    try {
+        const r = await fetch('/api/what-if', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+                producer: document.getElementById('wi-producer').value,
+                endpoint: document.getElementById('wi-endpoint').value,
+                change_kind: document.getElementById('wi-change-kind').value,
+                field: document.getElementById('wi-field').value,
+                new_field: document.getElementById('wi-new-field').value,
+            })
+        });
+        const d = await r.json();
+        if (d.error) { error('whatif-result', d.error); return; }
+        renderWhatIf(d);
+        markDone('whatif');
+    } catch(e) { error('whatif-result', e.message); }
+    finally { btn.disabled = false; btn.innerHTML = '⚡ Run What-If'; }
+}
+
+function renderWhatIf(d) {
+    const brk = d.classification === 'BREAKING';
+    const br = d.blast_radius || {};
+    const ch = d.proposed_change || {};
+    const changeKindLabel = (ch.change_kind||'').replace(/_/g,' ');
+
+    // Build the "proposed change" visual block
+    let changeViz = '';
+    if (ch.change_kind === 'field_renamed' && ch.field && ch.new_field) {
+        changeViz = `<span class="change-field"><span class="old">${esc(ch.field)}</span></span>
+                      <span class="change-arrow">→</span>
+                      <span class="change-field"><span class="new">${esc(ch.new_field)}</span></span>`;
+    } else if (ch.change_kind === 'field_removed') {
+        changeViz = `<span class="change-field"><span class="old">${esc(ch.field || ch.endpoint)}</span></span>
+                      <span class="change-arrow">→</span>
+                      <span style="color:var(--red);font-family:var(--mono);font-weight:700;">REMOVED</span>`;
+    } else if (ch.change_kind === 'endpoint_removed') {
+        changeViz = `<span style="color:var(--red);font-family:var(--mono);font-weight:700;">ENDPOINT REMOVED</span>`;
+    } else {
+        changeViz = `<span class="change-field"><span class="new">${esc(ch.new_field || ch.field || '')}</span></span>
+                      <span class="change-kind">ADDED</span>`;
+    }
+
+    let html = `
+        <div class="banner banner-sim">
+            <div class="banner-icon">🔮</div>
+            <div>
+                <h3 style="color:var(--purple);">SIMULATED · NOT APPLIED</h3>
+                <p>No files, contracts, or Git state were modified. This is a deterministic prediction.</p>
+            </div>
+        </div>
+
+        <div class="change-block">
+            <span class="change-endpoint">${esc(ch.endpoint || 'N/A')}</span>
+            <span class="change-kind">${esc(changeKindLabel)}</span>
+            ${changeViz}
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Classification</div>
+                <div class="stat-val ${brk ? 'red' : 'green'}">${d.classification}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Release Status</div>
+                <div class="stat-val ${d.status === 'BLOCKED' ? 'amber' : 'green'}">${d.status}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">SemVer</div>
+                <div class="stat-val white">${(d.semver?.recommendation || 'NONE').toUpperCase()}</div>
+                <div class="stat-note">${d.release?.from || '?'} → ${d.release?.to || '?'}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Affected Consumers</div>
+                <div class="stat-val ${(d.affected_consumers||0) > 0 ? 'red' : 'green'}">${d.affected_consumers || 0}</div>
+                <div class="stat-note">of ${d.direct_consumers || 0} direct</div>
+            </div>
+        </div>`;
+
+    // Consumer breakdown
+    const affected = br.affected_consumers_list || [];
+    const compat = br.compatible_consumers_list || [];
+    if (affected.length || compat.length) {
+        html += `<div class="card" style="margin-bottom:18px;">
+            <div class="card-head"><h2>Consumers</h2></div>
+            <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;">`;
+        affected.forEach(c => {
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--red-dim);border:1px solid var(--red-border);border-radius:8px;">
+                <span style="font-size:16px;">🔴</span>
+                <span style="font-weight:600;font-size:13px;">${esc(c)}</span>
+                <span class="badge badge-breaking" style="font-size:10px;">BREAKING</span>
+            </div>`;
+        });
+        compat.forEach(c => {
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:8px;">
+                <span style="font-size:16px;">🟢</span>
+                <span style="font-weight:600;font-size:13px;">${esc(c)}</span>
+                <span class="badge badge-compat" style="font-size:10px;">OK</span>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    // Blast radius details
+    if (br.confirmed_source_files || br.confirmed_test_files) {
+        html += `<div class="card" style="margin-bottom:18px;">
+            <div class="card-head"><h2>Blast Radius Details</h2></div>
+            <div class="card-body">
+                <div class="stats" style="margin-bottom:12px;">
+                    <div class="stat"><div class="stat-label">Confirmed Source</div><div class="stat-val white">${br.confirmed_source_files||0}</div></div>
+                    <div class="stat"><div class="stat-label">Confirmed Tests</div><div class="stat-val white">${br.confirmed_test_files||0}</div></div>
+                    <div class="stat"><div class="stat-label">Likely Source</div><div class="stat-val white">${br.likely_source_files||0}</div></div>
+                    <div class="stat"><div class="stat-label">Contract-Only</div><div class="stat-val white">${br.contract_only_consumers||0}</div></div>
+                </div>
+                ${fileList('Confirmed Source', br.confirmed_source_list, '📄')}
+                ${fileList('Confirmed Tests', br.confirmed_test_list, '🧪')}
+                ${fileList('Likely Source', br.likely_source_list, '📁')}
+            </div></div>`;
+    }
+
+    // Required actions
+    if (d.required_actions?.length) {
+        html += `<div class="card"><div class="card-head"><h2>Required Actions if Applied</h2></div>
+            <div class="card-body">
+                <ol style="padding-left:18px;color:var(--text-2);font-size:13px;line-height:2.2;">
+                    ${d.required_actions.map(a => `<li>${esc(a)}</li>`).join('')}
+                </ol></div></div>`;
+    }
+
+    document.getElementById('whatif-result').innerHTML = html;
+}
+
+/* =====================================================================
+   2. BLAST RADIUS
+   ===================================================================== */
+async function loadBlastRadius() {
+    loading('blast-result');
+    try {
+        const p = document.getElementById('br-producer').value;
+        const r = await fetch(`/api/blast-radius?producer=${encodeURIComponent(p)}`);
+        const d = await r.json();
+        if (d.error) { error('blast-result', d.error); return; }
+        renderBlast(d, p);
+        markDone('blast');
+    } catch(e) { error('blast-result', e.message); }
+}
+
+function renderBlast(d, producerName) {
+    const g = d.graph || {};
+    const nodes = g.nodes || [];
+    const edges = g.edges || [];
+    const affected = d.affected_consumers || [];
+    const compatible = d.compatible_consumers || [];
+    const summary = d.summary || {};
+    const prodNode = nodes.find(n => n.is_producer) || { service: producerName };
+    const consumers = nodes.filter(n => n.is_consumer);
+
+    let html = `
+        <div class="stats">
+            <div class="stat"><div class="stat-label">Services</div><div class="stat-val white">${g.total_nodes||0}</div></div>
+            <div class="stat"><div class="stat-label">Dependencies</div><div class="stat-val white">${g.total_edges||0}</div></div>
+            <div class="stat"><div class="stat-label">Affected</div><div class="stat-val ${affected.length ? 'red' : 'green'}">${affected.length}</div></div>
+            <div class="stat"><div class="stat-label">Compatible</div><div class="stat-val green">${compatible.length}</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-head"><h2>Dependency Graph</h2></div>
+            <div class="card-body">
+                <div class="graph-canvas">
+                    <div class="g-node producer" style="animation: cardIn 0.3s var(--ease);">
+                        <div class="g-node-icon">🏭</div>
+                        <div>
+                            <div class="g-node-name">${esc(prodNode.service)}</div>
+                            <div class="g-node-label">Producer</div>
+                        </div>
+                    </div>
+                    <div class="g-edge"></div>
+                    <div class="g-consumers">`;
+
+    consumers.forEach((c, i) => {
+        const isAff = affected.includes(c.service);
+        const cls = isAff ? 'n-break' : 'n-ok';
+        const icon = isAff ? '🔴' : '🟢';
+        const label = isAff ? 'BREAKING' : 'COMPATIBLE';
+
+        html += `
+            <div class="g-branch" style="animation-delay:${0.05 + i * 0.08}s">
+                <div class="g-edge"></div>
+                <div class="g-node ${cls} clickable" onclick="toggleConsumerDetail('cd-${i}')">
+                    <div class="g-node-icon">${icon}</div>
+                    <div>
+                        <div class="g-node-name">${esc(c.service)}</div>
+                        <div class="g-node-label">${label}</div>
+                    </div>
+                </div>
+                <div id="cd-${i}" style="display:none; margin-top:8px; width:100%;">
+                    <div style="background:var(--bg-1);border:1px solid var(--border-1);border-radius:8px;padding:12px 14px;font-size:12px;">
+                        <div class="kv" style="font-size:12px;">
+                            <div class="kv-k">Repository</div><div class="kv-v">${esc(c.repository||'—')}</div>
+                            <div class="kv-k">Contracts</div><div class="kv-v">${(c.contracts||[]).map(x => `<span class="cref">${esc(x)}</span>`).join(' ') || '—'}</div>
+                            <div class="kv-k">Status</div><div class="kv-v">${isAff ? '<span style="color:var(--red)">Incompatible</span>' : '<span style="color:var(--green)">Compatible</span>'}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+    });
+
+    html += `</div></div></div></div>`;
+
+    // Breaking findings
+    if (d.breaking_findings?.length) {
+        html += `<div class="card" style="margin-bottom:20px;">
+            <div class="card-head"><h2>Breaking Findings</h2><span class="badge badge-breaking">${d.breaking_findings.length}</span></div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="dtable"><thead><tr>
+                    <th>Consumer</th><th>Endpoint</th><th>Field</th><th>Change</th><th>Detail</th>
+                </tr></thead><tbody>
+                    ${d.breaking_findings.map(f => `<tr>
+                        <td><span class="cref">${esc(f.consumer_service||'')}</span></td>
+                        <td><span class="cref">${esc(f.endpoint||'')}</span></td>
+                        <td><span class="cref">${esc(f.affected_field||'')}</span></td>
+                        <td><span class="badge badge-breaking" style="font-size:10px">${esc(f.change_kind||'')}</span></td>
+                        <td style="color:var(--text-2)">${esc(f.detail||'')}</td>
+                    </tr>`).join('')}
+                </tbody></table>
+            </div></div>`;
+    }
+
+    // Blast radius summary
+    if (Object.keys(summary).length) {
+        html += `<div class="card"><div class="card-head"><h2>Impact Summary</h2></div>
+            <div class="card-body">
+                <div class="stats" style="margin-bottom:10px;">
+                    <div class="stat"><div class="stat-label">Direct Consumers</div><div class="stat-val white">${summary.direct_consumers||0}</div></div>
+                    <div class="stat"><div class="stat-label">Confirmed Source</div><div class="stat-val white">${(summary.confirmed_source_files||[]).length}</div></div>
+                    <div class="stat"><div class="stat-label">Confirmed Tests</div><div class="stat-val white">${(summary.confirmed_test_files||[]).length}</div></div>
+                    <div class="stat"><div class="stat-label">Transitive</div><div class="stat-val white">${summary.transitive_consumers||0}</div></div>
+                </div>
+                ${fileList('Confirmed Source Files', summary.confirmed_source_files, '📄')}
+                ${fileList('Confirmed Test Files', summary.confirmed_test_files, '🧪')}
+                ${fileList('Likely Source Files', summary.likely_source_files, '📁')}
+            </div></div>`;
+    }
+
+    document.getElementById('blast-result').innerHTML = html;
+}
+
+function toggleConsumerDetail(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+/* =====================================================================
+   3. REPAIR MISSION
+   ===================================================================== */
+async function loadMission() {
+    loading('mission-result');
+    try {
+        const p = document.getElementById('rm-producer').value;
+        const r = await fetch(`/api/repair-mission?producer=${encodeURIComponent(p)}`);
+        const d = await r.json();
+        if (d.error) { error('mission-result', d.error); return; }
+        renderMission(d);
+        markDone('mission');
+    } catch(e) { error('mission-result', e.message); }
+}
+
+function renderMission(m) {
+    const blocked = m.status === 'BLOCKED';
+    const ch = m.change || {};
+    const sv = m.semver || {};
+    const consumers = m.affected_consumers || [];
+
+    let html = `
+        <div class="banner ${blocked ? 'banner-blocked' : 'banner-ready'}">
+            <div class="banner-icon">${blocked ? '🎯' : '✅'}</div>
+            <div>
+                <h3>${esc(m.title || 'Repair Mission')}</h3>
+                <p><span class="cref">${esc(m.mission_id||'')}</span> · ${m.severity?.toUpperCase()} · ${m.status}</p>
+            </div>
+        </div>
+
+        <div class="arch-note">
+            <div class="arch-note-box bob">
+                <strong>🤖 IBM Bob</strong>
+                <span>Executes the repair</span>
+            </div>
+            <div class="arch-note-box cg">
+                <strong>🛡️ ContractGuard</strong>
+                <span>Defines & verifies safety conditions</span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat"><div class="stat-label">Status</div><div class="stat-val ${blocked ? 'amber' : 'green'}">${m.status}</div></div>
+            <div class="stat"><div class="stat-label">Severity</div><div class="stat-val ${m.severity==='breaking'?'red':'green'}">${(m.severity||'').toUpperCase()}</div></div>
+            <div class="stat"><div class="stat-label">SemVer</div><div class="stat-val white">${(sv.bump||'').toUpperCase()||'NONE'}</div>
+                <div class="stat-note">${sv.current_version||'?'} → ${sv.recommended_version||'?'}</div></div>
+            <div class="stat"><div class="stat-label">Consumers</div><div class="stat-val ${consumers.length?'red':'green'}">${consumers.length}</div>
+                <div class="stat-note">affected</div></div>
+        </div>`;
+
+    // Semantic Change card
+    html += `<div class="card" style="margin-bottom:16px;">
+        <div class="card-head"><h2>Semantic Change</h2>
+            <span class="badge badge-${ch.compatibility==='breaking'?'breaking':'compat'}">${(ch.compatibility||'').toUpperCase()}</span>
+        </div>
+        <div class="card-body">
+            <div class="change-block" style="margin-bottom:14px;animation:none;">
+                <span class="change-endpoint">${esc(ch.endpoint||'')}</span>
+                <span class="change-kind">${esc((ch.change_kind||'').replace(/_/g,' '))}</span>
+                ${ch.old_value ? `<span class="change-field"><span class="old">${esc(ch.old_value)}</span></span><span class="change-arrow">→</span>` : ''}
+                ${ch.new_value ? `<span class="change-field"><span class="new">${esc(ch.new_value)}</span></span>` : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text-3);">${esc(ch.reason||'')}</div>
+        </div></div>`;
+
+    // Affected consumer cards
+    html += `<div class="card" style="margin-bottom:16px;">
+        <div class="card-head"><h2>Affected Consumers</h2>
+            <span class="badge ${consumers.length?'badge-breaking':'badge-ready'}">${consumers.length} affected</span>
+        </div><div class="card-body">`;
+
+    if (!consumers.length) {
+        html += `<p style="color:var(--green);font-weight:600;">✅ All discovered consumers are compatible.</p>`;
+    } else {
+        consumers.forEach((c, i) => {
+            html += `<div class="expander ${i===0?'open':''}">
+                <div class="expander-head" onclick="toggleExp(this)">
+                    <div class="left">
+                        <span style="font-size:15px">🔴</span>
+                        <strong style="font-size:13px">${esc(c.service)}</strong>
+                        <span class="cref" style="font-size:10px">${esc(c.contract||'')}</span>
+                    </div>
+                    <span class="expander-arr">▼</span>
+                </div>
+                <div class="expander-body"><div class="expander-inner">
+                    <div class="kv" style="margin-bottom:10px;">
+                        <div class="kv-k">Endpoints</div><div class="kv-v">${(c.affected_endpoints||[]).map(e=>`<span class="cref" style="margin-right:4px">${esc(e)}</span>`).join('')||'—'}</div>
+                        <div class="kv-k">Fields</div><div class="kv-v">${(c.affected_fields||[]).map(f=>`<span class="cref" style="margin-right:4px">${esc(f)}</span>`).join('')||'—'}</div>
+                    </div>
+                    ${fileList('Confirmed Source', c.confirmed_source_files, '📄')}
+                    ${fileList('Confirmed Tests', c.confirmed_test_files, '🧪')}
+                    ${fileList('Likely Source', c.likely_source_files, '📁')}
+                </div></div></div>`;
+        });
+    }
+    html += `</div></div>`;
+
+    // Required Actions
+    if (m.required_actions?.length) {
+        html += `<div class="card" style="margin-bottom:16px;">
+            <div class="card-head"><h2>Required Actions</h2></div>
+            <div class="card-body">
+                <ol style="padding-left:18px;color:var(--text-2);font-size:13px;line-height:2.2;">
+                    ${m.required_actions.map(a=>`<li>${esc(a)}</li>`).join('')}
+                </ol></div></div>`;
+    }
+
+    // Acceptance Criteria
+    if (m.acceptance_criteria?.length) {
+        html += `<div class="card"><div class="card-head"><h2>Acceptance Criteria</h2></div>
+            <div class="card-body"><ul style="list-style:none;padding:0;">
+                ${m.acceptance_criteria.map(c => `<li style="padding:6px 0;font-size:13px;color:var(--text-2);display:flex;align-items:center;gap:8px;">
+                    <span style="width:16px;height:16px;border:1.5px solid var(--border-2);border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;color:var(--text-4);">☐</span>
+                    ${esc(c)}</li>`).join('')}
+            </ul></div></div>`;
+    }
+
+    document.getElementById('mission-result').innerHTML = html;
+}
+
+/* =====================================================================
+   4. VERIFICATION
+   ===================================================================== */
+let vHistory = [];
+
+async function loadVerification() {
+    loading('verify-result');
+    try {
+        const p = document.getElementById('vr-producer').value;
+        const ts = document.getElementById('vr-test-status').value;
+        const r = await fetch(`/api/verify?producer=${encodeURIComponent(p)}&test_status=${ts}`);
+        const d = await r.json();
+        if (d.error) { error('verify-result', d.error); return; }
+        vHistory.push(d);
+        renderVerify();
+        markDone('verify');
+    } catch(e) { error('verify-result', e.message); }
+}
+
+function renderVerify() {
+    const latest = vHistory[vHistory.length - 1];
+    const ready = latest.status === 'READY';
+    const totalChecked = latest.consumers_checked?.length || 0;
+    const compatCount = latest.compatible_consumers?.length || 0;
+    const affCount = latest.affected_consumers?.length || 0;
+    const pct = totalChecked > 0 ? Math.round((compatCount / totalChecked) * 100) : 0;
+
+    let html = `
+        <div class="banner ${ready ? 'banner-ready' : 'banner-blocked'}">
+            <div class="banner-icon">${ready ? '✅' : '🔒'}</div>
+            <div>
+                <h3>Release Gate: ${latest.status}</h3>
+                <p>${ready ? 'All consumers compatible. Safe to release.' : `${affCount} consumer(s) still incompatible.`}</p>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Compatible</div>
+                <div class="stat-val green">${compatCount}</div>
+                <div class="stat-note">of ${totalChecked} checked</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Incompatible</div>
+                <div class="stat-val ${affCount?'red':'green'}">${affCount}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Breaking Findings</div>
+                <div class="stat-val ${latest.breaking_changes_count?'red':'green'}">${latest.breaking_changes_count||0}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Next Step</div>
+                <div class="stat-val white" style="font-size:13px;">${esc(latest.next_step||'—')}</div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:22px;">
+            <div class="progress-bar">
+                <div class="progress-fill ${pct >= 100 ? 'ok' : 'warn'}" style="width:${pct}%"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-4);margin-top:4px;">
+                <span>${compatCount}/${totalChecked} consumers compatible</span>
+                <span>${pct}%</span>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:22px;">
+            <div class="card-head">
+                <h2>Verification Timeline</h2>
+                <span class="badge badge-neutral">${vHistory.length} attempt${vHistory.length>1?'s':''}</span>
+            </div>
+            <div class="card-body">
+                <div class="timeline">`;
+
+    vHistory.forEach((v, i) => {
+        const last = i === vHistory.length - 1;
+        const vReady = v.status === 'READY';
+        const dotCls = vReady ? 'ok' : (last ? 'now' : 'fail');
+        const cc = v.compatible_consumers?.length || 0;
+        const tc = v.consumers_checked?.length || 0;
+        const ac = v.affected_consumers?.length || 0;
+
+        html += `<div class="tl-item" style="animation-delay:${i*80}ms;">
+            <div class="tl-dot ${dotCls}"></div>
+            <div class="tl-card ${vReady && last ? 'style="border-color:var(--green-border)"' : ''}">
+                <div class="tl-title">
+                    Attempt #${i+1}
+                    <span class="badge ${vReady ? 'badge-ready' : 'badge-blocked'}">${v.status}</span>
+                </div>
+                <div class="tl-body">
+                    <strong>${cc}/${tc}</strong> compatible
+                    ${!vReady ? ` · <span style="color:var(--red)">${ac} remaining</span>` : ''}
+                    ${v.affected_consumers?.length ? `<div style="margin-top:6px;font-size:11px;color:var(--text-4);">
+                        ${v.affected_consumers.map(c => `<span class="cref" style="margin-right:4px">${esc(c)}</span>`).join('')}
+                    </div>` : ''}
+                    ${vReady ? `<div style="color:var(--green);font-weight:600;margin-top:6px;">→ ${v.next_step || 'release_or_commit'}</div>` : ''}
+                </div>
+            </div></div>`;
+    });
+
+    html += `</div>
+            <div style="margin-top:18px;text-align:center;">
+                <button class="btn btn-ghost" onclick="vHistory=[];document.getElementById('verify-result').innerHTML='';">🔄 Reset Timeline</button>
+            </div></div></div>`;
+
+    // Remaining failures table
+    if (latest.remaining_failures?.length) {
+        html += `<div class="card"><div class="card-head"><h2>Remaining Failures</h2>
+            <span class="badge badge-breaking">${latest.remaining_failures.length}</span></div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="dtable"><thead><tr>
+                    <th>Consumer</th><th>Endpoint</th><th>Field</th><th>Change</th><th>Detail</th>
+                </tr></thead><tbody>
+                    ${latest.remaining_failures.map(f => `<tr>
+                        <td><span class="cref">${esc(f.consumer_service||'')}</span></td>
+                        <td><span class="cref">${esc(f.endpoint||'')}</span></td>
+                        <td><span class="cref">${esc(f.affected_field||'')}</span></td>
+                        <td><span class="badge badge-breaking" style="font-size:10px">${esc(f.change_kind||'')}</span></td>
+                        <td style="color:var(--text-2)">${esc(f.detail||'')}</td>
+                    </tr>`).join('')}
+                </tbody></table></div></div>`;
+    }
+
+    document.getElementById('verify-result').innerHTML = html;
+}
+
+/* =====================================================================
+   5. CHANGE PASSPORT
+   ===================================================================== */
+async function loadPassport() {
+    loading('passport-result');
+    try {
+        const p = document.getElementById('pp-producer').value;
+        const r = await fetch(`/api/passport?producer=${encodeURIComponent(p)}`);
+        const d = await r.json();
+        if (d.error) { error('passport-result', d.error); return; }
+        renderPassport(d);
+        markDone('passport');
+    } catch(e) { error('passport-result', e.message); }
+}
+
+function renderPassport(p) {
+    const ready = p.release_status === 'READY';
+    const ch = p.change || {};
+    const imp = p.impact || {};
+    const rel = p.release || {};
+    const ver = p.verification || {};
+    const mis = p.repair_mission || {};
+    const graph = p.dependency_graph || {};
+
+    let html = `
+        <div class="card" style="margin-bottom:22px;border-color:${ready ? 'var(--green-border)' : 'var(--amber-border)'};">
+            <div class="card-head" style="background:${ready ? 'var(--green-dim)' : 'var(--amber-dim)'};">
+                <h2 style="font-size:16px;">📋 Change Passport</h2>
+                <span class="badge ${ready ? 'badge-ready' : 'badge-blocked'}">${p.release_status || 'UNKNOWN'}</span>
+            </div>
+            <div class="card-body">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text-3);margin-bottom:16px;word-break:break-all;">${esc(p.passport_id||'')}</div>
+
+                <div class="pass-sec">🔄 Semantic Change</div>
+                <div class="kv" style="margin-bottom:6px;">
+                    <div class="kv-k">Endpoint</div><div class="kv-v">${esc(ch.endpoint||'')}</div>
+                    <div class="kv-k">Change</div><div class="kv-v">${esc(ch.kind||'')} — ${esc(ch.field||'')} ${ch.new_field||ch.new_value ? '→ '+esc(ch.new_field||ch.new_value) : ''}</div>
+                    <div class="kv-k">Classification</div><div class="kv-v"><span class="badge badge-${(ch.compatibility||'')==='breaking'?'breaking':'compat'}">${(ch.compatibility||'').toUpperCase()}</span></div>
+                </div>
+
+                <div class="pass-sec">💥 Blast Radius</div>
+                <div class="kv" style="margin-bottom:6px;">
+                    <div class="kv-k">Direct Consumers</div><div class="kv-v">${imp.direct_consumers||0}</div>
+                    <div class="kv-k">Affected</div><div class="kv-v" style="color:${(imp.affected_consumers||0)?'var(--red)':'var(--green)'}">${imp.affected_consumers||0}</div>
+                    <div class="kv-k">Confirmed Source</div><div class="kv-v">${(imp.confirmed_source_files||[]).length}</div>
+                    <div class="kv-k">Confirmed Tests</div><div class="kv-v">${(imp.confirmed_test_files||[]).length}</div>
+                </div>
+
+                <div class="pass-sec">📦 SemVer</div>
+                <div class="kv" style="margin-bottom:6px;">
+                    <div class="kv-k">Bump</div><div class="kv-v">${semverBadge(rel.semver)}</div>
+                    <div class="kv-k">Version</div><div class="kv-v">${rel.from||'?'} → ${rel.to||'?'}</div>
+                </div>
+
+                <div class="pass-sec">🎯 Repair Mission</div>
+                <div class="kv" style="margin-bottom:6px;">
+                    <div class="kv-k">Mission ID</div><div class="kv-v"><span class="cref">${esc(mis.mission_id||'')}</span></div>
+                    <div class="kv-k">Status</div><div class="kv-v"><span class="badge ${mis.status==='BLOCKED'?'badge-blocked':'badge-ready'}">${mis.status||''}</span></div>
+                    <div class="kv-k">Affected Consumers</div><div class="kv-v">${mis.affected_consumers_count||0}</div>
+                </div>
+
+                <div class="pass-sec">✅ Verification</div>
+                <div class="kv" style="margin-bottom:6px;">
+                    <div class="kv-k">Status</div><div class="kv-v"><span class="badge ${ready?'badge-ready':'badge-blocked'}">${ver.status||''}</span></div>
+                    <div class="kv-k">Compatible</div><div class="kv-v">${ver.compatible_consumers||0}</div>
+                    <div class="kv-k">Incompatible</div><div class="kv-v">${ver.incompatible_consumers||0}</div>
+                    <div class="kv-k">Next Step</div><div class="kv-v">${esc(ver.next_step||'')}</div>
+                </div>
+
+                <div class="pass-sec">🔐 Evidence</div>
+                <div class="kv">
+                    <div class="kv-k">Evidence ID</div><div class="kv-v" style="word-break:break-all">${esc(p.evidence_id||'—')}</div>
+                    <div class="kv-k">Graph</div><div class="kv-v">${graph.total_nodes||0} nodes · ${graph.total_edges||0} edges</div>
+                </div>
+            </div>
+        </div>`;
+
+    document.getElementById('passport-result').innerHTML = html;
+}
+</script>
+</body>
+</html>
