@@ -70,7 +70,7 @@ ContractGuard strictly enforces separation of concerns between deterministic log
 
 ## Why Tests Alone Are Insufficient
 
-A major vulnerability in modern microservices is that **consumer tests can pass green while an inter-service contract is completely broken**.
+In this demo, consumer tests can remain green because HTTP interactions are mocked locally. ContractGuard independently checks the producer and consumer contracts to detect wire-level incompatibility.
 
 In microservice client repositories (such as `payment-client`), HTTP interactions are typically mocked using frameworks like Spring's `MockRestServiceServer` or WireMock. When a producer changes a response field (e.g., `paymentAmount` → `totalAmount`):
 1. Consumer unit and integration tests continue asserting against hardcoded JSON fixtures expecting `paymentAmount`.
@@ -214,13 +214,17 @@ ContractGuard runs an MCP (Model Context Protocol) stdio server over JSON-RPC 2.
 
 ### Available MCP Tools
 
+ContractGuard exposes 7 deterministic and AI-assisted tools over the Model Context Protocol:
+
 | Tool | Purpose | Key Inputs |
 |---|---|---|
 | `compare_contracts` | Pairwise comparison between two OpenAPI YAML files | `producer_path`, `consumer_path` |
 | `read_contractguard_config` | Parse a single `contractguard.yaml` and resolve paths | `config_path` |
-| `discover_and_check_consumers` | Recursive workspace discovery and blast radius calculation | `workspace_root`, `producer_filter` |
-| `analyze_contract_impact` | Discovery + deterministic blast radius + Mistral AI repair plan | `workspace_root`, `producer_filter` |
-| `verify_release_safety` | Release gate verification (`READY`/`BLOCKED`) and evidence generation | `workspace_root`, `producer_service`, `test_status`, `output_dir` |
+| `discover_and_check_consumers` | Recursive workspace discovery and blast-radius calculation | `workspace_root`, `producer_filter` |
+| `get_blast_radius` | Scan consumer codebases for impacted source and test files | `workspace_root`, `producer_filter` |
+| `analyze_contract_impact` | Discovery + blast radius + Mistral AI explanation and advisory repair plan | `workspace_root`, `producer_filter` |
+| `verify_release_safety` | Release gate verification (`READY`/`BLOCKED`) and evidence artifact generation | `workspace_root`, `producer_service`, `test_status`, `output_dir` |
+| `analyze_git_change` | Git-aware PR change analysis, blast radius, SemVer recommendation, and verdict | `workspace_root`, `base_ref`, `producer_filter`, `current_version` |
 
 ### Registering with IBM Bob
 
@@ -357,11 +361,20 @@ In real engineering teams, contract modifications happen inside branches, pull r
 - `--output file.md`: Write formatted report directly to a file for CI comments.
 - `--base ref`: Explicit Git ref to compare against (e.g. `origin/main`, `HEAD~1`).
 
+### Deterministic SemVer Rules
+SemVer recommendations are strictly derived from the producer API contract change relative to its Git base:
+- **Breaking producer contract change** $\rightarrow$ **`MAJOR`**
+- **Compatible additive producer contract change** $\rightarrow$ **`MINOR`**
+- **Contract touched but no schema/API compatibility change** $\rightarrow$ **`PATCH`**
+- **No contract changes** $\rightarrow$ **`NONE`**
+
+The recommendation reflects the intrinsic nature of the producer change, independent of whether downstream consumers have already been repaired.
+
 ### Exit Code Philosophy
 ContractGuard follows strict, deterministic CI exit codes:
-- **`0`**: `READY` — All consumer contracts are compatible and the change is safe to release/merge.
-- **`1`**: `BLOCKED` — Breaking contract changes detected across one or more consumers.
-- **`2`**: Error — Invalid configuration, non-git directory, or user environment error.
+- **`0` = `READY`**: All discovered consumer contracts are compatible with the proposed producer change.
+- **`1` = `BLOCKED`**: One or more discovered consumers are incompatible with the proposed producer change.
+- **`2` = `ERROR`**: Git, configuration, environment, or analysis error.
 
 ---
 
@@ -425,7 +438,7 @@ Affected consumers:
 
 Recommended SemVer:
   1.4.0 -> 2.0.0 (MAJOR)
-  Reason: Detected 3 breaking API contract change(s).
+  Reason: Detected 1 breaking API contract change(s).
 
 Verdict:
   BLOCKED
@@ -451,7 +464,7 @@ IBM Bob uses MCP tool `analyze_git_change` to identify broken fields, then repai
 - `reporting-service/contracts/payment-service.yaml`
 - Java DTOs and test fixtures in `payment-client`.
 
-### 7. Re-run PR Analysis (READY)
+### 7. Re-run PR Analysis (READY with MAJOR SemVer)
 ```bash
 contract-guard pr .. --base origin/main
 ```
@@ -464,7 +477,10 @@ CONTRACTGUARD -- PR ANALYSIS
   Commit            : def5678
 
 Changed Contracts:
+  - order-service/contracts/payment-service.yaml
+  - payment-client/contracts/payment-service.yaml
   - payment-service/docs/openapi.yaml
+  - reporting-service/contracts/payment-service.yaml
 
 Consumers Checked: 3
   Compatible        : 3
@@ -472,18 +488,36 @@ Consumers Checked: 3
   Breaking Changes  : 0
 
 Recommended SemVer:
-  1.4.0 -> 1.4.0 (NONE)
+  1.4.0 -> 2.0.0 (MAJOR)
+  Reason: Producer contract contains a breaking change, but all discovered consumers are compatible.
 
 Verdict:
   READY
 ```
 *(Command terminates with exit code 0, clearing CI pull request for merge).*
 
+> **Important Semantic Distinction:**
+> - **SemVer** reflects the nature of the producer API change (`paymentAmount` $\rightarrow$ `totalAmount` is a breaking schema change $\rightarrow$ `MAJOR`).
+> - **Verdict** reflects the compatibility of discovered consumers (all 3 discovered consumers have been repaired $\rightarrow$ `READY`).
+> - **Breaking + Incompatible Consumers** $\rightarrow$ `MAJOR` + `BLOCKED` (exit 1).
+> - **Breaking + Repaired/Compatible Consumers** $\rightarrow$ `MAJOR` + `READY` (exit 0).
+
 ### 8. Release Evidence Generation
 ```bash
 contract-guard evidence .. --producer payment-service --output-dir ./release-evidence
 ```
-The evidence artifact is deterministically generated with Git commit SHA, base ref, SemVer recommendation, and tamper-evident SHA-256 content identifier.
+The evidence artifact is deterministically generated with Git commit SHA, base ref, SemVer recommendation, and tamper-evident SHA-256 content identifier (`contractguard-evidence.json` and `contractguard-report.md`).
+
+---
+
+## Limitations
+
+ContractGuard maintains strict boundaries and does not claim more than its implementation proves:
+- **OpenAPI REST Contracts**: Analyzes OpenAPI 3.x specifications; non-REST protocols (AsyncAPI, GraphQL, gRPC) are not supported in Phase 2.
+- **Local Git CLI Subprocess**: Operates through the host `git` executable without remote network calls or GitHub/GitLab token authentication.
+- **Shared Workspace Assumption**: Assumes consumer and producer service repositories reside within a shared workspace tree or accessible filesystem.
+- **Contract-Bound Detection**: Scans contract specifications and token occurrences in code; purely internal code refactors without OpenAPI contract modifications cannot be detected statically via schema diffs alone.
+- **Deferred Phase 3 Features**: Event-driven contracts, centralized schema registries, automated DTO code generation, and direct PR commenting bots remain deferred.
 
 ---
 

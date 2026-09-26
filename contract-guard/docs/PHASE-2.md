@@ -262,9 +262,9 @@ Evidence ID: `cg-ev-6a8b1c4d9e0f2345`
 ## 9. CI/CD Integration
 
 ### Exit Codes
-- **`0`**: READY (Safe to merge, no breaking contract changes).
-- **`1`**: BLOCKED (Breaking contract changes detected across consumers).
-- **`2`**: System/Git/Configuration error.
+- **`0` = `READY`**: All discovered consumer contracts are compatible with the proposed producer change.
+- **`1` = `BLOCKED`**: One or more discovered consumers are incompatible with the proposed producer change.
+- **`2` = `ERROR`**: Git, configuration, environment, or analysis error.
 
 ### GitHub Actions (`.github/workflows/contractguard.yml`)
 ```yaml
@@ -316,7 +316,16 @@ contractguard:pr-check:
 
 ## 10. MCP Extension (`analyze_git_change`)
 
-Added tool `analyze_git_change` to the MCP Server:
+ContractGuard provides 7 tools over the Model Context Protocol:
+1. `compare_contracts`: Pairwise OpenAPI AST comparison between two contracts.
+2. `read_contractguard_config`: Parse a `contractguard.yaml` configuration file and resolve relative paths.
+3. `discover_and_check_consumers`: Recursive workspace consumer discovery and compatibility check.
+4. `get_blast_radius`: Source token scan identifying confirmed and likely impacted consumer files.
+5. `analyze_contract_impact`: Discovery + blast radius + Mistral AI explanation and advisory repair plan.
+6. `verify_release_safety`: Deterministic release gate (`READY`/`BLOCKED`) and evidence artifact generation.
+7. `analyze_git_change`: Primary Phase 2 PR change analysis tool for autonomous agents.
+
+#### `analyze_git_change` Specification
 - **Input**:
   - `workspace_root` (required string): Path to workspace repository.
   - `base_ref` (optional string): Target branch or baseline commit ref.
@@ -379,10 +388,10 @@ Tested across `payment-service`, `payment-client`, `order-service`, and `reporti
    - Verdict: **`BLOCKED`** with exit code `1`.
 5. **Bob Repair**: Consumers updated to `totalAmount` in contracts and Java DTOs.
 6. **Deterministic Re-verification**: `contract-guard pr ..` re-run:
-   - 3 consumers compatible.
-   - 0 breaking changes.
+   - 3 consumers checked, 3 compatible, 0 affected, 0 breaking.
+   - SemVer recommended: **MAJOR** (`1.4.0 -> 2.0.0`) — Producer change remains breaking even though all discovered consumers are compatible.
    - Verdict: **`READY`** with exit code `0`.
-   - Release evidence regenerated with stable tamper-evident ID.
+   - Release evidence regenerated with stable tamper-evident ID (`contractguard-evidence.json` and `contractguard-report.md`).
 
 ---
 
