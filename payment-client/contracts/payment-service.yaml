@@ -30,7 +30,7 @@ components:
       required:
         - id
         - customerId
-        - paymentAmount
+        - totalAmount
         - currency
         - status
       properties:
@@ -42,7 +42,7 @@ components:
           type: string
           description: Customer identifier
           example: CUST-123
-        paymentAmount:
+        totalAmount:
           type: number
           format: double
           description: Payment amount

@@ -28,14 +28,14 @@ components:
       type: object
       required:
         - id
-        - paymentAmount
+        - totalAmount
         - status
       properties:
         id:
           type: string
           description: Payment identifier
           example: PAY-001
-        paymentAmount:
+        totalAmount:
           type: number
           format: double
           description: Payment amount used to confirm order total
