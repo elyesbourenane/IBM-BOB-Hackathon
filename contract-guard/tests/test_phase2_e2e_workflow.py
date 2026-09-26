@@ -267,13 +267,20 @@ def test_phase2_full_git_pr_workflow(tmp_path: Path):
     assert len(pr_repaired.affected_consumers) == 0
     assert len(pr_repaired.breaking_findings) == 0
 
+    # SemVer MUST remain MAJOR because the producer contract change is breaking
+    assert pr_repaired.semver.bump == "major"
+    assert pr_repaired.semver.recommended_version == "2.0.0"
+    assert "Producer contract contains a breaking change, but all discovered consumers are compatible." in pr_repaired.semver.reason
+
     # Evidence ID is deterministically regenerated
     assert pr_repaired.evidence_id.startswith("cg-ev-")
 
-    # MCP tool also confirms READY
+    # MCP tool also confirms READY with MAJOR bump
     mcp_repaired = handle_analyze_git_change({
         "workspace_root": str(repo),
         "base_ref": base_sha,
     })
     assert mcp_repaired["verdict"] == "READY"
     assert mcp_repaired["affected_consumers"] == 0
+    assert mcp_repaired["semver"]["bump"] == "major"
+    assert mcp_repaired["semver"]["recommended_version"] == "2.0.0"

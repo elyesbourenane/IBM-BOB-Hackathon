@@ -83,6 +83,7 @@ def calculate_semver_recommendation(
     findings: list[Finding | dict[str, Any]],
     has_contract_changes: bool = True,
     current_version: Optional[str] = None,
+    all_consumers_compatible: bool = False,
 ) -> SemVerRecommendation:
     """
     Deterministically recommend a SemVer bump based on detected contract differences.
@@ -96,6 +97,8 @@ def calculate_semver_recommendation(
     current_version:
         Optional baseline version (e.g. from openapi.yaml `info.version` or git tag).
         If omitted or invalid, bump category and reason are returned without inventing a version.
+    all_consumers_compatible:
+        True if all discovered consumers are compatible with the producer contract.
     """
     breaking_count = 0
     compatible_additions = 0
@@ -117,7 +120,10 @@ def calculate_semver_recommendation(
     # 1. Breaking changes always mandate MAJOR bump
     if breaking_count > 0:
         bump = "major"
-        reason = f"Detected {breaking_count} breaking API contract change(s)."
+        if all_consumers_compatible:
+            reason = "Producer contract contains a breaking change, but all discovered consumers are compatible."
+        else:
+            reason = f"Detected {breaking_count} breaking API contract change(s)."
     # 2. Backward-compatible additions mandate MINOR bump
     elif compatible_additions > 0:
         bump = "minor"

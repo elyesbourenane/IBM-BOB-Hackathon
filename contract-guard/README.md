@@ -489,7 +489,7 @@ The evidence artifact is deterministically generated with Git commit SHA, base r
 
 ## Testing
 
-Run the comprehensive test suite (117 passing tests, completely independent of external network or API keys):
+Run the comprehensive test suite (118 passing tests, completely independent of external network or API keys):
 
 ```bash
 pytest

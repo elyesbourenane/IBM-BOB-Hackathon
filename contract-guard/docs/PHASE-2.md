@@ -343,7 +343,7 @@ The SHA-256 evidence identifier remains 100% deterministic and tamper-evident ac
 
 ## 12. Automated Testing Suite
 
-The test suite expanded from the Phase 1 baseline of **92 tests** to **117 comprehensive automated tests**:
+The test suite expanded from the Phase 1 baseline of **92 tests** to **118 comprehensive automated tests**:
 
 | Test Module | Tests | Focus |
 |---|---|---|
@@ -356,12 +356,12 @@ The test suite expanded from the Phase 1 baseline of **92 tests** to **117 compr
 | `tests/test_evidence.py` | 7 | Canonical hashing, release gate, and Git metadata |
 | `tests/test_git.py` | 7 | Git detection, changed files, missing git handling |
 | `tests/test_versioning.py` | 8 | SemVer parsing, bumping, and recommendation rules |
-| `tests/test_pr.py` | 5 | PR analysis, baseline clean, breaking blocked, additions |
+| `tests/test_pr.py` | 6 | PR analysis, baseline clean, breaking blocked, repaired consumers, additions |
 | `tests/test_cli.py` | 5 | CLI commands (`check`, `git-status`, `git-diff`, `pr`) |
 | `tests/test_mcp_server.py` | 8 | MCP tools lifecycle, verify, blast radius, `analyze_git_change` |
 | `tests/test_e2e_workflow.py` | 1 | Phase 1 end-to-end Bob repair loop |
 | `tests/test_phase2_e2e_workflow.py` | 1 | Phase 2 full Git-aware PR safety and repair workflow |
-| **Total** | **117** | **100% Passing, 0 Failures, 0 Warnings (80% Total Coverage)** |
+| **Total** | **118** | **100% Passing, 0 Failures, 0 Warnings (80% Total Coverage)** |
 
 ---
 

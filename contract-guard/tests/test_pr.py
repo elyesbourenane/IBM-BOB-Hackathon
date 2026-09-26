@@ -173,6 +173,93 @@ def test_pr_analysis_breaking_change_blocked(tmp_path: Path):
     assert report.evidence_id in md
 
 
+def test_pr_analysis_breaking_producer_repaired_consumers(tmp_path: Path):
+    """
+    Test B: Breaking producer contract change (paymentAmount -> totalAmount),
+    where all known consumers have been updated to expect totalAmount.
+    The producer API change is still breaking (MAJOR bump 1.4.0 -> 2.0.0),
+    but the PR is safe to merge because all consumers are compatible (READY).
+    """
+    repo = _setup_git_workspace(tmp_path)
+
+    # 1. Modify producer contract: paymentAmount -> totalAmount
+    prod_contract = repo / "payment-service" / "docs" / "openapi.yaml"
+    prod_contract.write_text(
+        textwrap.dedent("""
+        openapi: "3.1.0"
+        info:
+          title: Payment Service
+          version: "1.4.0"
+        paths:
+          /api/payments/{id}:
+            get:
+              responses:
+                "200":
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        required:
+                          - id
+                          - totalAmount
+                        properties:
+                          id: { type: string }
+                          totalAmount: { type: number }
+        """).lstrip("\n"),
+        encoding="utf-8",
+    )
+
+    # 2. Repair consumer contract: update payment-client to expect totalAmount
+    client_contract = repo / "payment-client" / "contracts" / "payment-service.yaml"
+    client_contract.write_text(
+        textwrap.dedent("""
+        openapi: "3.1.0"
+        info:
+          title: Payment Client
+          version: "1.0.0"
+        paths:
+          /api/payments/{id}:
+            get:
+              responses:
+                "200":
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        required:
+                          - id
+                          - totalAmount
+                        properties:
+                          id: { type: string }
+                          totalAmount: { type: number }
+        """).lstrip("\n"),
+        encoding="utf-8",
+    )
+
+    report = analyze_pr(repo)
+
+    # Consumer compatibility is READY
+    assert report.is_ready is True
+    assert report.verdict == "READY"
+    assert len(report.consumers_checked) == 1
+    assert len(report.compatible_consumers) == 1
+    assert len(report.affected_consumers) == 0
+    assert len(report.breaking_findings) == 0
+
+    # SemVer MUST remain MAJOR because the producer change itself is breaking
+    assert report.semver.bump == "major"
+    assert report.semver.current_version == "1.4.0"
+    assert report.semver.recommended_version == "2.0.0"
+    assert "Producer contract contains a breaking change, but all discovered consumers are compatible." in report.semver.reason
+
+    # Markdown format checks
+    md = report.to_markdown()
+    assert "**Verdict:** `READY`" in md
+    assert "**MAJOR**" in md
+    assert "`1.4.0 -> 2.0.0`" in md
+    assert "Producer contract contains a breaking change, but all discovered consumers are compatible." in md
+
+
 def test_pr_analysis_compatible_addition(tmp_path: Path):
     repo = _setup_git_workspace(tmp_path)
 

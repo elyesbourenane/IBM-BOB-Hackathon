@@ -21,7 +21,7 @@ class PaymentResponseSerializationTest {
                 {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
-                  "paymentAmount": 100.00,
+                  "totalAmount": 100.00,
                   "currency": "EUR",
                   "status": "APPROVED"
                 }
@@ -32,19 +32,19 @@ class PaymentResponseSerializationTest {
         assertNotNull(response);
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
-        assertEquals(new BigDecimal("100.00"), response.getPaymentAmount());
+        assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
         assertEquals("EUR", response.getCurrency());
         assertEquals("APPROVED", response.getStatus());
     }
 
     @Test
-    @DisplayName("Should demonstrate that the consumer explicitly expects and relies on the paymentAmount field")
-    void testConsumerExpectsPaymentAmountField() throws Exception {
+    @DisplayName("Should demonstrate that the consumer explicitly expects and relies on the totalAmount field")
+    void testConsumerExpectsTotalAmountField() throws Exception {
         String json = """
                 {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
-                  "paymentAmount": 100.00,
+                  "totalAmount": 100.00,
                   "currency": "EUR",
                   "status": "APPROVED"
                 }
@@ -52,13 +52,13 @@ class PaymentResponseSerializationTest {
 
         PaymentResponse response = objectMapper.readValue(json, PaymentResponse.class);
 
-        // Verification that paymentAmount is present and can be processed numerically
-        assertNotNull(response.getPaymentAmount(), "Expected paymentAmount field to be non-null in consumer response");
-        assertEquals(new BigDecimal("100.00"), response.getPaymentAmount());
-        assertTrue(response.getPaymentAmount().compareTo(BigDecimal.ZERO) > 0, "Consumer expects positive paymentAmount value");
+        // Verification that totalAmount is present and can be processed numerically
+        assertNotNull(response.getTotalAmount(), "Expected totalAmount field to be non-null in consumer response");
+        assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
+        assertTrue(response.getTotalAmount().compareTo(BigDecimal.ZERO) > 0, "Consumer expects positive totalAmount value");
 
         // Verification that amount calculations work as expected in consumer logic
-        BigDecimal taxCalculated = response.getPaymentAmount().multiply(new BigDecimal("0.20"));
+        BigDecimal taxCalculated = response.getTotalAmount().multiply(new BigDecimal("0.20"));
         assertEquals(new BigDecimal("20.0000"), taxCalculated);
     }
 }

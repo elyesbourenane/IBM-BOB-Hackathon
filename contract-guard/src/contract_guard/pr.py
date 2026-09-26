@@ -13,10 +13,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+import yaml
+
+from .comparator import Comparator
 from .discovery import discover_and_check, DiscoveryReport
 from .evidence import evaluate_release_gate, generate_evidence, EvidenceReport, ReleaseStatus
-from .git import inspect_git_status, GitStatus
+from .git import get_file_content_at_ref, inspect_git_status, GitStatus
 from .loader import load_contract
+from .models import Finding
 from .versioning import calculate_semver_recommendation, SemVerRecommendation
 
 
@@ -161,6 +165,82 @@ def _extract_contract_version(contract_path: Path | str) -> Optional[str]:
     return None
 
 
+def _detect_producer_contract_changes(
+    ws: Path,
+    git_status: GitStatus,
+    base_ref: Optional[str],
+    report: DiscoveryReport,
+    producer_filter: Optional[str] = None,
+) -> tuple[list[Finding], bool]:
+    """
+    Compare changed producer contracts at HEAD/working tree against their baseline at base_ref.
+    Returns (producer_findings, has_producer_contract_changes).
+    """
+    known_producer_paths = {
+        str(Path(r.producer_contract).resolve())
+        for r in report.results
+        if r.producer_contract and (not producer_filter or r.producer_service == producer_filter)
+    }
+    known_consumer_paths = {
+        str(Path(r.consumer_contract).resolve())
+        for r in report.results
+        if r.consumer_contract
+    }
+
+    # Identify changed producer contracts
+    changed_producer_contracts: list[str] = []
+    for c_file in git_status.changed_contracts:
+        abs_p = str((ws / c_file).resolve())
+        if abs_p in known_consumer_paths:
+            # Skip consumer contracts - they do not dictate producer SemVer
+            continue
+        if known_producer_paths and abs_p not in known_producer_paths:
+            continue
+        changed_producer_contracts.append(c_file)
+
+    # If no specific producer found via discovery configs, but contracts were changed
+    if not changed_producer_contracts and git_status.changed_contracts and not known_producer_paths:
+        changed_producer_contracts = [
+            c for c in git_status.changed_contracts
+            if not ("/contracts/" in c.replace("\\", "/").lower())
+        ] or git_status.changed_contracts
+
+    producer_findings: list[Finding] = []
+    has_producer_changes = bool(changed_producer_contracts)
+
+    # For each changed producer contract, diff HEAD against base_ref
+    for c_file in changed_producer_contracts:
+        abs_c_path = ws / c_file
+        if not abs_c_path.exists():
+            continue
+
+        effective_base = base_ref or "HEAD"
+        base_content = get_file_content_at_ref(ws, c_file, effective_base)
+
+        try:
+            head_text = abs_c_path.read_text(encoding="utf-8")
+        except Exception:
+            head_text = ""
+
+        if not base_ref and (base_content is None or base_content.strip() == head_text.strip()):
+            alt_content = get_file_content_at_ref(ws, c_file, "HEAD~1")
+            if alt_content is not None:
+                base_content = alt_content
+
+        if base_content is not None:
+            try:
+                base_doc = yaml.safe_load(base_content)
+                head_doc = load_contract(abs_c_path)
+                if isinstance(base_doc, dict) and isinstance(head_doc, dict):
+                    cmp = Comparator(abs_c_path, abs_c_path)
+                    diff_report = cmp._compare_docs(producer_doc=head_doc, consumer_doc=base_doc)
+                    producer_findings.extend(diff_report.findings)
+            except Exception:
+                pass
+
+    return producer_findings, has_producer_changes
+
+
 def analyze_pr(
     workspace_root: str | Path,
     base_ref: Optional[str] = None,
@@ -199,8 +279,30 @@ def analyze_pr(
         test_results={"status": "PASS", "details": "PR pre-merge contract evaluation"},
     )
 
-    # 3. Detect version if not explicitly supplied
+    # 3. Detect API version from producer contract if not explicitly supplied
     detected_version = current_version
+    if not detected_version and report.results:
+        for r in report.results:
+            if producer_filter and r.producer_service != producer_filter:
+                continue
+            if r.producer_contract and Path(r.producer_contract).exists():
+                ver = _extract_contract_version(r.producer_contract)
+                if ver:
+                    detected_version = ver
+                    break
+
+    if not detected_version and git_status.changed_contracts:
+        for c_file in git_status.changed_contracts:
+            # Avoid extracting version from consumer contract copies
+            if "/contracts/" in c_file.replace("\\", "/").lower():
+                continue
+            full_c_path = ws / c_file
+            if full_c_path.exists():
+                ver = _extract_contract_version(full_c_path)
+                if ver:
+                    detected_version = ver
+                    break
+
     if not detected_version and git_status.changed_contracts:
         for c_file in git_status.changed_contracts:
             full_c_path = ws / c_file
@@ -210,24 +312,36 @@ def analyze_pr(
                     detected_version = ver
                     break
 
-    # If still not found, check discovered producer contracts
-    if not detected_version and report.results:
-        for r in report.results:
-            if r.producer_contract and Path(r.producer_contract).exists():
-                ver = _extract_contract_version(r.producer_contract)
-                if ver:
-                    detected_version = ver
-                    break
-    # Collect all findings across all consumer-producer comparisons
-    all_findings = []
-    for r in report.results:
-        all_findings.extend(r.findings)
-
     # 4. SemVer recommendation
+    # Evaluate the producer contract change directly against Git baseline
+    producer_findings, has_producer_changes = _detect_producer_contract_changes(
+        ws=ws,
+        git_status=git_status,
+        base_ref=base_ref,
+        report=report,
+        producer_filter=producer_filter,
+    )
+
+    all_consumers_compatible = (
+        len(report.consumers_checked) > 0 and len(report.affected_consumers) == 0
+    )
+
+    if producer_findings or has_producer_changes:
+        effective_findings = producer_findings
+        has_changes = has_producer_changes
+    else:
+        # Fallback when git diff is not available (e.g. non-git directory or mock tests)
+        all_comparison_findings = []
+        for r in report.results:
+            all_comparison_findings.extend(r.findings)
+        effective_findings = all_comparison_findings if all_comparison_findings else report.breaking_findings
+        has_changes = bool(git_status.changed_contracts or report.breaking_findings or all_comparison_findings)
+
     semver_rec = calculate_semver_recommendation(
-        findings=all_findings if all_findings else report.breaking_findings,
-        has_contract_changes=bool(git_status.changed_contracts or report.breaking_findings or all_findings),
+        findings=effective_findings,
+        has_contract_changes=has_changes,
         current_version=detected_version,
+        all_consumers_compatible=all_consumers_compatible,
     )
 
     # 5. Deterministic evidence generation
