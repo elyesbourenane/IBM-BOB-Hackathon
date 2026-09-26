@@ -59,8 +59,13 @@ class BlastRadiusSummary:
     confirmed_test_files: list[str] = field(default_factory=list)
     likely_source_files: list[str] = field(default_factory=list)
     likely_test_files: list[str] = field(default_factory=list)
+    direct_consumers: int = 0
+    affected_consumers: int = 0
+    contract_only_consumers: int = 0
+    transitive_consumers: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        aff_count = self.affected_consumers if self.affected_consumers else len(self.affected_services)
         return {
             "affected_services": list(self.affected_services),
             "affected_contracts": list(self.affected_contracts),
@@ -70,6 +75,34 @@ class BlastRadiusSummary:
             "confirmed_test_files": list(self.confirmed_test_files),
             "likely_source_files": list(self.likely_source_files),
             "likely_test_files": list(self.likely_test_files),
+            "direct_consumers": self.direct_consumers,
+            "affected_consumers": aff_count,
+            "contract_only_consumers": self.contract_only_consumers,
+            "transitive_consumers": self.transitive_consumers,
+            "metrics": {
+                "direct_consumers": self.direct_consumers,
+                "affected_consumers": aff_count,
+                "contract_only_consumers": self.contract_only_consumers,
+                "confirmed_source_files": len(self.confirmed_source_files),
+                "confirmed_test_files": len(self.confirmed_test_files),
+                "likely_source_files": len(self.likely_source_files),
+                "likely_test_files": len(self.likely_test_files),
+                "transitive_consumers": self.transitive_consumers,
+            },
+        }
+
+    def summary_metrics(self) -> dict[str, int]:
+        """Return integer counts of all blast radius dimensions."""
+        aff_count = self.affected_consumers if self.affected_consumers else len(self.affected_services)
+        return {
+            "direct_consumers": self.direct_consumers,
+            "affected_consumers": aff_count,
+            "contract_only_consumers": self.contract_only_consumers,
+            "confirmed_source_files": len(self.confirmed_source_files),
+            "confirmed_test_files": len(self.confirmed_test_files),
+            "likely_source_files": len(self.likely_source_files),
+            "likely_test_files": len(self.likely_test_files),
+            "transitive_consumers": self.transitive_consumers,
         }
 
 
@@ -119,7 +152,11 @@ class ConsumerImpact:
         }
 
 
-def summarize_blast_radius(impacts: list[ConsumerImpact]) -> BlastRadiusSummary:
+def summarize_blast_radius(
+    impacts: list[ConsumerImpact],
+    direct_consumers: int = 0,
+    transitive_consumers: int = 0,
+) -> BlastRadiusSummary:
     """Aggregate individual consumer impacts into a single deduplicated blast-radius summary."""
     services: list[str] = []
     contracts: list[str] = []
@@ -152,6 +189,26 @@ def summarize_blast_radius(impacts: list[ConsumerImpact]) -> BlastRadiusSummary:
             if f not in likely_test and f not in conf_test:
                 likely_test.append(f)
 
+    # Sort all lists deterministically
+    services.sort()
+    contracts.sort()
+    endpoints.sort()
+    fields.sort()
+    conf_src.sort()
+    conf_test.sort()
+    likely_src.sort()
+    likely_test.sort()
+
+    # Calculate contract-only consumers: affected consumers with 0 confirmed files
+    contract_only_count = 0
+    for svc in services:
+        svc_conf_src = [f for imp in impacts if imp.consumer_service == svc for f in imp.confirmed_source_files]
+        svc_conf_test = [f for imp in impacts if imp.consumer_service == svc for f in imp.confirmed_test_files]
+        if not svc_conf_src and not svc_conf_test:
+            contract_only_count += 1
+
+    eff_direct = direct_consumers if direct_consumers > 0 else len(services)
+
     return BlastRadiusSummary(
         affected_services=services,
         affected_contracts=contracts,
@@ -161,25 +218,72 @@ def summarize_blast_radius(impacts: list[ConsumerImpact]) -> BlastRadiusSummary:
         confirmed_test_files=conf_test,
         likely_source_files=likely_src,
         likely_test_files=likely_test,
+        direct_consumers=eff_direct,
+        affected_consumers=len(services),
+        contract_only_consumers=contract_only_count,
+        transitive_consumers=transitive_consumers,
     )
 
 
 def _extract_field_tokens(affected_field: str) -> list[str]:
-    """Derive search tokens for a given affected field path."""
+    """
+    Derive search tokens for a given affected field path.
+
+    Includes:
+    - Raw field name and capitalized variant (e.g. paymentAmount, PaymentAmount)
+    - Getter / setter methods (getPaymentAmount, setPaymentAmount, isPaymentAmount)
+    - Snake case equivalents (payment_amount, get_payment_amount, set_payment_amount)
+    - JSON / serialization annotations (@JsonProperty("paymentAmount"), @SerializedName("paymentAmount"))
+    - Quoted JSON fixture / dictionary keys ("paymentAmount", "payment_amount")
+    """
     leaf = affected_field.split(".")[-1]
-    tokens = {leaf}
+    if not leaf:
+        return []
+
+    tokens: set[str] = {leaf}
     if len(leaf) > 1:
-        # e.g. paymentAmount -> PaymentAmount (matches getPaymentAmount, setPaymentAmount)
-        tokens.add(leaf[0].upper() + leaf[1:])
+        cap = leaf[0].upper() + leaf[1:]
+        tokens.add(cap)
+
+        # Explicit getters / setters
+        tokens.add(f"get{cap}")
+        tokens.add(f"set{cap}")
+        tokens.add(f"is{cap}")
+
         # snake_case conversion: paymentAmount -> payment_amount
         snake = re.sub(r"(?<!^)(?=[A-Z])", "_", leaf).lower()
         tokens.add(snake)
+        tokens.add(f"get_{snake}")
+        tokens.add(f"set_{snake}")
+
         # camelCase conversion: payment_amount -> paymentAmount
         if "_" in leaf:
             parts = leaf.split("_")
             camel = parts[0] + "".join(p.capitalize() for p in parts[1:])
             tokens.add(camel)
-    return [t for t in tokens if t]
+            camel_cap = parts[0].capitalize() + "".join(p.capitalize() for p in parts[1:])
+            tokens.add(f"get{camel_cap}")
+            tokens.add(f"set{camel_cap}")
+
+        # Annotations (Jackson @JsonProperty, Gson @SerializedName)
+        tokens.add(f'@JsonProperty("{leaf}")')
+        tokens.add(f"@JsonProperty('{leaf}')")
+        tokens.add(f'@SerializedName("{leaf}")')
+        tokens.add(f"@SerializedName('{leaf}')")
+        if snake != leaf:
+            tokens.add(f'@JsonProperty("{snake}")')
+            tokens.add(f"@JsonProperty('{snake}')")
+            tokens.add(f'@SerializedName("{snake}")')
+            tokens.add(f"@SerializedName('{snake}')")
+
+        # JSON fixtures / quoted strings
+        tokens.add(f'"{leaf}"')
+        tokens.add(f"'{leaf}'")
+        if snake != leaf:
+            tokens.add(f'"{snake}"')
+            tokens.add(f"'{snake}'")
+
+    return sorted(tokens)
 
 
 def _extract_likely_tokens(endpoint: str, finding: Finding) -> list[str]:
@@ -261,6 +365,8 @@ def scan_consumer_impact(
                     or "Test" in path.name
                     or path.name.startswith("test_")
                     or path.name.endswith("_test.py")
+                    or "fixtures" in path.parts
+                    or "fixture" in path.parts
                 )
 
                 # Check confirmed matches
@@ -276,6 +382,11 @@ def scan_consumer_impact(
                         likely_test.append(rel_path)
                     else:
                         likely_src.append(rel_path)
+
+    confirmed_src.sort()
+    confirmed_test.sort()
+    likely_src.sort()
+    likely_test.sort()
 
     return ConsumerImpact(
         consumer_service=consumer_service,

@@ -12,6 +12,7 @@ from .config import load_config
 from .discovery import discover_and_check
 from .evidence import evaluate_release_gate, generate_evidence, ReleaseStatus
 from .git import inspect_git_status
+from .graph import build_dependency_graph
 from .models import Severity
 from .mission import generate_repair_mission, format_mission_text
 from .pr import analyze_pr
@@ -137,7 +138,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     impact.add_argument(
         "--format",
-        choices=["text", "json"],
+        choices=["text", "json", "markdown"],
         default="text",
         help="Output format (default: text).",
     )
@@ -540,52 +541,120 @@ def cmd_impact(args: argparse.Namespace) -> int:
         print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
         return 2
 
+    graph = build_dependency_graph(args.workspace, producer_filter=args.producer)
+    summary = report.blast_radius_summary
+
+    # Determine API change string
+    api_change = "None"
+    for imp in report.impacts:
+        if imp.change_kind == "field_renamed":
+            import re
+            m = re.search(r"Consumer expects '([^']+)' but producer now uses '([^']+)'", imp.detail)
+            if m:
+                api_change = f"{m.group(1)} -> {m.group(2)}"
+                break
+            elif imp.affected_field:
+                api_change = imp.affected_field
+                break
+        elif imp.affected_field:
+            api_change = imp.affected_field
+            break
+    if api_change == "None" and summary.affected_fields:
+        api_change = ", ".join(summary.affected_fields)
+
+    # JSON format
     if args.format == "json":
         import json
         payload = {
             "workspace": report.workspace_root,
             "producer_filter": report.producer_filter,
             "summary": report.summary,
-            "blast_radius_summary": report.blast_radius_summary.to_dict(),
+            "api_change": api_change,
+            "blast_radius_summary": summary.to_dict(),
+            "direct_consumers": summary.direct_consumers,
+            "affected_consumers": summary.affected_consumers or len(summary.affected_services),
+            "contract_only_consumers": summary.contract_only_consumers,
+            "confirmed_source_files": len(summary.confirmed_source_files),
+            "confirmed_test_files": len(summary.confirmed_test_files),
+            "likely_source_files": len(summary.likely_source_files),
+            "likely_test_files": len(summary.likely_test_files),
+            "transitive_consumers": summary.transitive_consumers,
+            "dependency_graph": graph.to_dict(),
             "impacts": [imp.to_dict() for imp in report.impacts],
         }
         print(json.dumps(payload, indent=2))
         return 0 if len(report.affected_consumers) == 0 else 1
 
-    summary = report.blast_radius_summary
+    # Markdown format
+    if args.format == "markdown":
+        lines = [
+            "# CONTRACTGUARD — BLAST RADIUS",
+            "",
+            "## API CHANGE",
+            api_change,
+            "",
+            "| Metric | Count |",
+            "|---|---|",
+            f"| Direct Consumers | {summary.direct_consumers} |",
+            f"| Affected Consumers | {summary.affected_consumers or len(summary.affected_services)} |",
+            f"| Contract-Only Consumers | {summary.contract_only_consumers} |",
+            f"| Confirmed Source Files | {len(summary.confirmed_source_files)} |",
+            f"| Confirmed Test Files | {len(summary.confirmed_test_files)} |",
+            f"| Likely Source Files | {len(summary.likely_source_files)} |",
+            f"| Transitive Consumers | {summary.transitive_consumers} |",
+        ]
+        if summary.confirmed_source_files:
+            lines.extend(["", "### Confirmed Source Files"])
+            for f in summary.confirmed_source_files:
+                lines.append(f"- {f}")
+        if summary.confirmed_test_files:
+            lines.extend(["", "### Confirmed Test Files"])
+            for f in summary.confirmed_test_files:
+                lines.append(f"- {f}")
+        if summary.likely_source_files:
+            lines.extend(["", "### Likely Source Files"])
+            for f in summary.likely_source_files:
+                lines.append(f"- {f}")
+        lines.append("")
+        print("\n".join(lines))
+        return 0 if len(report.affected_consumers) == 0 else 1
+
+    # Text format
     if not report.affected_consumers:
         banner = _colorize("[OK] NO BLAST RADIUS - ALL CONSUMERS COMPATIBLE", _GREEN, _BOLD, no_color=nc)
         print(f"\n{banner}\n")
         print(f"  {report.summary}\n")
         return 0
 
-    banner = _colorize("[!!] DETERMINISTIC BLAST RADIUS DETECTED", _RED, _BOLD, no_color=nc)
-    print(f"\n{banner}\n")
-    print(f"  {report.summary}\n")
-
-    print(_colorize("Blast Radius Summary:", _BOLD, no_color=nc))
-    print(f"  Affected Services      : {', '.join(summary.affected_services) if summary.affected_services else 'None'}")
-    print(f"  Affected Endpoints     : {', '.join(summary.affected_endpoints) if summary.affected_endpoints else 'None'}")
-    print(f"  Affected Fields        : {', '.join(summary.affected_fields) if summary.affected_fields else 'None'}")
-    print(f"  Affected Contracts     : {len(summary.affected_contracts)}")
-    for c in summary.affected_contracts:
-        print(f"    - {c}")
-
-    print(f"\n  Confirmed Source Files : {len(summary.confirmed_source_files)}")
+    print(_colorize("\nCONTRACTGUARD — BLAST RADIUS", _BOLD, _CYAN, no_color=nc))
+    print(_colorize("\nAPI CHANGE", _BOLD, no_color=nc))
+    print(f"{api_change}")
+    print(_colorize("\nDIRECT CONSUMERS", _BOLD, no_color=nc))
+    print(f"{summary.direct_consumers}")
+    print(_colorize("\nAFFECTED CONSUMERS", _BOLD, no_color=nc))
+    print(f"{summary.affected_consumers or len(summary.affected_services)}")
+    print(_colorize("\nCONTRACT-ONLY CONSUMERS", _BOLD, no_color=nc))
+    print(f"{summary.contract_only_consumers}")
+    print(_colorize("\nCONFIRMED SOURCE FILES", _BOLD, no_color=nc))
+    print(f"{len(summary.confirmed_source_files)}")
     for f in summary.confirmed_source_files:
-        print(f"    [Confirmed] {f}")
-
-    print(f"  Confirmed Test Files   : {len(summary.confirmed_test_files)}")
+        print(f"  - {f}")
+    print(_colorize("\nCONFIRMED TEST FILES", _BOLD, no_color=nc))
+    print(f"{len(summary.confirmed_test_files)}")
     for f in summary.confirmed_test_files:
-        print(f"    [Confirmed] {f}")
-
-    if summary.likely_source_files or summary.likely_test_files:
-        print(f"\n  Likely Inferred Files  : {len(summary.likely_source_files) + len(summary.likely_test_files)}")
+        print(f"  - {f}")
+    if summary.likely_source_files:
+        print(_colorize("\nLIKELY SOURCE FILES", _BOLD, no_color=nc))
+        print(f"{len(summary.likely_source_files)}")
         for f in summary.likely_source_files:
-            print(f"    [Likely] {f}")
+            print(f"  - {f}")
+    if summary.likely_test_files:
+        print(_colorize("\nLIKELY TEST FILES", _BOLD, no_color=nc))
+        print(f"{len(summary.likely_test_files)}")
         for f in summary.likely_test_files:
-            print(f"    [Likely] {f}")
-    print()
+            print(f"  - {f}")
+    print(_colorize("\nTRANSITIVE CONSUMERS", _BOLD, no_color=nc))
+    print(f"{summary.transitive_consumers}\n")
 
     return 1
 

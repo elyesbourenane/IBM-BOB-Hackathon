@@ -3,7 +3,7 @@
 > **"Your API changed. Did every consumer change with it?"**  
 > **"AI reasons. Deterministic checks decide. Bob executes. Deterministic verification proves."**
 
-ContractGuard is an agentic API change safety layer for modern microservice architectures. Built for the **IBM Bob 2.0 Hackathon**, ContractGuard empowers autonomous coding agents (like IBM Bob) by:
+ContractGuard is an agentic API change safety layer for modern microservice architectures. Built for the **IBM Bob 2.0 Hackathon**, ContractGuard provides deterministic safety infrastructure for coding agents such as IBM Bob by:
 - **Deterministically detecting** breaking API contract changes
 - **Mapping downstream impact** across consumer repositories (confirmed facts vs. likely impact)
 - **Generating structured Repair Missions** for IBM Bob with exact semantic changes, affected files, required actions, and acceptance criteria
@@ -27,7 +27,7 @@ ContractGuard strictly enforces separation of concerns between deterministic log
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ DETERMINISTIC ENGINE (ContractGuard Core)                                                       │
 │  - Multi-repo Consumer Discovery (contractguard.yaml)                                           │
-│  - OpenAPI 3.x AST Comparison & Rule Evaluation                                                 │
+│  - OpenAPI 3.x Schema Comparison & Rule Evaluation                                              │
 │  - Verdict Decision (BREAKING vs COMPATIBLE) & SemVer Recommendation                            │
 │  - Deterministic Blast-Radius File Inspection (Confirmed vs Likely Source & Test Files)        │
 │  - Deterministic Repair Mission Generation                                                      │
@@ -63,7 +63,7 @@ ContractGuard strictly enforces separation of concerns between deterministic log
 
 | Responsibility | Deterministic Engine | Mistral AI | IBM Bob |
 |---|:---:|:---:|:---:|
-| Contract parsing & AST comparison | **Authoritative** | ❌ Forbidden | ❌ |
+| Contract parsing & schema comparison | **Authoritative** | ❌ Forbidden | ❌ |
 | Breaking / Compatible verdict | **Decides** | ❌ Cannot override | ❌ |
 | Consumer discovery & dependency graph | **Authoritative** | ❌ | ❌ |
 | Confirmed blast-radius file identification | **Authoritative Facts** | ❌ Inferred only | ❌ |
@@ -573,8 +573,8 @@ READY (SemVer remains 1.4.0 -> 2.0.0 MAJOR)
 
 ### Confirmed vs. Likely Impact
 
-- **CONFIRMED Impact**: Exact affected schema token (e.g. `paymentAmount`, `getPaymentAmount`) is found in the consumer source or test file via token/AST scanning.
-- **LIKELY Impact**: Inferred from call-path heuristics (e.g. endpoint path segments like `/payments`). Relevant to the domain but not confirmed to reference the broken field.
+- **CONFIRMED Impact**: Exact affected schema token (e.g. `paymentAmount`, `getPaymentAmount`, `isPaymentAmount`, `@JsonProperty`) is found in the consumer source or test file via deterministic token inspection.
+- **LIKELY Impact**: Inferred from endpoint path segments (e.g. `/api/payments/{id}` matching `PaymentClient.java`). Relevant to the domain but not confirmed to reference the broken field.
 - **Invariant (No Invented Source Files)**: If a consumer service has no confirmed code matches (e.g. contract-only consumers), `confirmed_source_files` and `confirmed_test_files` remain empty lists (`[]`). ContractGuard never hallucinates file paths.
 
 ### Artifacts Consistency
@@ -660,6 +660,85 @@ Acceptance Criteria:
 
 ---
 
+## Phase 3B: Precise Blast-Radius Analysis & Deterministic Dependency Graph
+
+Phase 3B enhances ContractGuard's blast-radius precision to answer:
+
+> **"What downstream code is actually affected by this API contract change?"**
+
+### Core Invariant
+
+> **"Confirmed means deterministic evidence exists. Likely means inference and must never be presented as confirmed."**
+
+ContractGuard does **not** implement a general-purpose Java compiler or AST framework. It remains small, deterministic, explainable, and testable.
+
+### Key Capabilities
+
+1. **Conservative Evidence Model**:
+   - **Confirmed Source Impact**: Detects explicit source references (e.g. `paymentAmount`, `getPaymentAmount()`, `setPaymentAmount()`, `isPaymentAmount()`, `@JsonProperty("paymentAmount")`, `@SerializedName("paymentAmount")`).
+   - **Confirmed Test Impact**: Identifies assertions in test classes and literal keys in JSON test fixtures (e.g. `src/test/resources/fixtures/payment.json`).
+   - **Confirmed vs. Likely Separation**: Files in endpoint call paths without confirmed field references remain strictly **Likely** (e.g. `PaymentClient.java`). They are never promoted to confirmed.
+   - **Contract-Only Consumers**: Consumers affected at the contract level but possessing zero confirmed source or test references (e.g. `order-service`, `reporting-service`) are explicitly distinguished.
+
+2. **Deterministic Dependency Graph**:
+   - The dependency graph is constructed from explicit `contractguard.yaml` declarations.
+   - Implemented in `src/contract_guard/graph.py` with `DependencyNode`, `DependencyEdge`, and `DependencyGraph`.
+   - Deterministically sorted nodes, edges, and contract paths with automatic edge deduplication.
+   - No heuristic guesswork, arbitrary AST inference, or import sniffing.
+
+3. **Direct vs. Transitive Impact**:
+   - Direct consumers are reported from explicit configurations.
+   - Transitive consumers are evaluated strictly along explicit multi-hop dependency edges (A -> B -> C). If no downstream relationship is explicitly declared, `transitive_consumers: 0` is reported without guessing.
+
+4. **CLI Support**:
+   ```bash
+   # Formatted text summary
+   contract-guard impact .. --format text
+
+   # Machine-readable JSON including dependency graph
+   contract-guard impact .. --format json
+
+   # PR-ready Markdown table and file listings
+   contract-guard impact .. --format markdown
+   ```
+
+#### Example Output (`paymentAmount` → `totalAmount`):
+```text
+CONTRACTGUARD — BLAST RADIUS
+
+API CHANGE
+paymentAmount -> totalAmount
+
+DIRECT CONSUMERS
+3
+
+AFFECTED CONSUMERS
+3
+
+CONTRACT-ONLY CONSUMERS
+2
+
+CONFIRMED SOURCE FILES
+2
+  - src/main/java/com/example/paymentclient/model/PaymentResponse.java
+  - src/main/java/com/example/paymentclient/service/PaymentDisplayService.java
+
+CONFIRMED TEST FILES
+3
+  - src/test/java/com/example/paymentclient/client/PaymentClientTest.java
+  - src/test/java/com/example/paymentclient/model/PaymentResponseSerializationTest.java
+  - src/test/java/com/example/paymentclient/service/PaymentDisplayServiceTest.java
+
+LIKELY SOURCE FILES
+1
+  - src/main/java/com/example/paymentclient/client/PaymentClient.java
+
+TRANSITIVE CONSUMERS
+0
+```
+
+---
+
 ## Limitations
 
 ContractGuard maintains strict boundaries and does not claim more than its implementation proves:
@@ -673,7 +752,7 @@ ContractGuard maintains strict boundaries and does not claim more than its imple
 
 ## Testing
 
-Run the comprehensive test suite (133 passing tests, completely independent of external network or API keys):
+Run the comprehensive test suite (142 passing tests, completely independent of external network or API keys):
 
 ```bash
 pytest
@@ -684,4 +763,4 @@ Run with test coverage report:
 pytest --cov=contract_guard --cov-report=term-missing
 ```
 
-Phase 3A maintains a 100% test passing rate (133 passed, 0 failures, 0 warnings).
+Phase 3B maintains a 100% test passing rate (142 passed, 0 failures, 0 warnings).

@@ -62,7 +62,11 @@ class DiscoveryReport:
 
     @property
     def blast_radius_summary(self) -> BlastRadiusSummary:
-        return summarize_blast_radius(self.impacts)
+        return summarize_blast_radius(
+            self.impacts,
+            direct_consumers=len(self.consumers_checked),
+            transitive_consumers=0,
+        )
 
     @property
     def summary(self) -> str:

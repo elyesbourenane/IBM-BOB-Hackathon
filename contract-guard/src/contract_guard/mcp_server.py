@@ -34,6 +34,7 @@ from .comparator import Comparator
 from .config import load_config
 from .discovery import discover_and_check, DiscoveryReport, ConsumerResult
 from .evidence import evaluate_release_gate, generate_evidence
+from .graph import build_dependency_graph
 from .models import ComparisonReport, Finding
 from .mission import generate_repair_mission
 from .pr import analyze_pr
@@ -523,12 +524,14 @@ def _run_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
             "isError": True,
         }
 
+    graph = build_dependency_graph(workspace_root, producer_filter=producer_filter)
     payload = {
         "workspace_root": report.workspace_root,
         "producer_filter": report.producer_filter,
         "summary": report.summary,
         "blast_radius_summary": report.blast_radius_summary.to_dict(),
         "impacts": [imp.to_dict() for imp in report.impacts],
+        "dependency_graph": graph.to_dict(),
     }
     return {
         "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],

@@ -74,6 +74,8 @@ class AffectedConsumerMission:
     affected_fields: list[str] = field(default_factory=list)
     confirmed_source_files: list[str] = field(default_factory=list)
     confirmed_test_files: list[str] = field(default_factory=list)
+    likely_source_files: list[str] = field(default_factory=list)
+    likely_test_files: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +85,8 @@ class AffectedConsumerMission:
             "affected_fields": list(self.affected_fields),
             "confirmed_source_files": list(self.confirmed_source_files),
             "confirmed_test_files": list(self.confirmed_test_files),
+            "likely_source_files": list(self.likely_source_files),
+            "likely_test_files": list(self.likely_test_files),
         }
 
 
@@ -455,6 +459,8 @@ def generate_repair_mission(
         fields: set[str] = set()
         conf_src: set[str] = set()
         conf_test: set[str] = set()
+        likely_src: set[str] = set()
+        likely_test: set[str] = set()
 
         for imp in c_impacts:
             if not c_contract and imp.contract_path:
@@ -467,6 +473,10 @@ def generate_repair_mission(
                 conf_src.add(sf)
             for tf in imp.confirmed_test_files:
                 conf_test.add(tf)
+            for lsf in imp.likely_source_files:
+                likely_src.add(lsf)
+            for ltf in imp.likely_test_files:
+                likely_test.add(ltf)
 
         if not c_contract:
             for r in report.results:
@@ -485,6 +495,8 @@ def generate_repair_mission(
                 affected_fields=sorted(fields),
                 confirmed_source_files=sorted(conf_src),
                 confirmed_test_files=sorted(conf_test),
+                likely_source_files=sorted(likely_src),
+                likely_test_files=sorted(likely_test),
             )
         )
 
