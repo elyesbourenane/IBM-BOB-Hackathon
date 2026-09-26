@@ -304,39 +304,72 @@ def _apply_in_memory_change(
 
         # Apply field changes to discovered schemas
         for s in schemas_to_visit:
-            _modify_schema(s, change_kind, field, new_field)
+            _modify_schema(doc, s, change_kind, field, new_field)
+
+
+def _resolve_schema_ref(
+    doc: dict[str, Any],
+    schema: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve a local OpenAPI $ref to the actual schema in memory."""
+    if not isinstance(schema, dict):
+        return schema
+
+    ref = schema.get("$ref")
+    if not isinstance(ref, str):
+        return schema
+
+    prefix = "#/components/schemas/"
+    if not ref.startswith(prefix):
+        return schema
+
+    schema_name = ref[len(prefix):]
+    components = doc.get("components", {})
+    schemas = components.get("schemas", {}) if isinstance(components, dict) else {}
+
+    resolved = schemas.get(schema_name)
+    return resolved if isinstance(resolved, dict) else schema
 
 
 def _modify_schema(
+    doc: dict[str, Any],
     schema: dict[str, Any],
     change_kind: str,
     field: Optional[str],
     new_field: Optional[str],
 ) -> None:
-    """Helper to apply in-memory schema property modifications."""
+    """Apply an in-memory change to a resolved OpenAPI schema."""
     if not isinstance(schema, dict):
         return
 
+    schema = _resolve_schema_ref(doc, schema)
+
     props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        props = {}
+        schema["properties"] = props
+
     reqs = schema.get("required", [])
-    if isinstance(reqs, list):
-        req_set = list(reqs)
-    else:
-        req_set = []
+    req_set = list(reqs) if isinstance(reqs, list) else []
 
     if change_kind == "field_renamed" and field and new_field:
         if field in props:
             props[new_field] = props.pop(field)
+
         if field in req_set:
-            req_set = [new_field if r == field else r for r in req_set]
-            schema["required"] = req_set
+            schema["required"] = [
+                new_field if r == field else r
+                for r in req_set
+            ]
 
     elif change_kind == "field_removed" and field:
         if field in props:
             del props[field]
+
         if field in req_set:
-            req_set = [r for r in req_set if r != field]
-            schema["required"] = req_set
+            schema["required"] = [
+                r for r in req_set if r != field
+            ]
 
     elif change_kind == "field_optional_added":
         fname = new_field or field
@@ -347,6 +380,7 @@ def _modify_schema(
         fname = new_field or field
         if fname:
             props[fname] = {"type": "string"}
+
             if fname not in req_set:
                 req_set.append(fname)
                 schema["required"] = req_set
@@ -493,17 +527,35 @@ def simulate_what_if(
 
     # 6. SemVer calculation
     is_breaking = len(affected_consumers) > 0 or any(f.is_breaking for f in all_findings)
-    findings_dicts = [
-        {
-            "endpoint": f.endpoint,
-            "affected_field": f.affected_field or scan_token,
-            "change_kind": f.change_kind.value if hasattr(f.change_kind, "value") else str(f.change_kind),
-            "severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
-            "detail": f.detail,
-            "reason": f.reason,
-        }
-        for f in all_findings
-    ]
+    # Deduplicate findings across consumers to produce canonical breaking findings
+    unique_findings_dicts: list[dict[str, Any]] = []
+    seen_finding_keys: set[tuple[str, str, str]] = set()
+    renamed_keys: set[tuple[str, str]] = set()
+
+    for f in all_findings:
+        ck = f.change_kind.value if hasattr(f.change_kind, "value") else str(f.change_kind)
+        if ck == "field_renamed":
+            renamed_keys.add((f.endpoint, f.affected_field or scan_token))
+
+    for f in all_findings:
+        ck = f.change_kind.value if hasattr(f.change_kind, "value") else str(f.change_kind)
+        af = f.affected_field or scan_token
+        ep = f.endpoint
+        # Suppress redundant field_removed if already identified as field_renamed
+        if ck == "field_removed" and (ep, af) in renamed_keys:
+            continue
+        key = (ep, af, ck)
+        if key not in seen_finding_keys:
+            seen_finding_keys.add(key)
+            unique_findings_dicts.append({
+                "endpoint": ep,
+                "affected_field": af,
+                "change_kind": ck,
+                "severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
+                "detail": f.detail,
+                "reason": f.reason,
+            })
+    findings_dicts = unique_findings_dicts
 
     # If no consumer contract was broken (e.g. producer-only change), determine intrinsic change severity
     if not findings_dicts and change_kind in ("field_renamed", "field_removed", "endpoint_removed", "field_required_added"):

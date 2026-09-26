@@ -138,6 +138,56 @@ def check_optional_added(
     return findings
 
 
+import re
+
+
+def _tokenize_name(name: str) -> set[str]:
+    """Extract lowercase word tokens from camelCase, snake_case, or kebab-case name."""
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
+    s = s.replace("_", " ").replace("-", " ")
+    return {w.lower() for w in s.split() if w}
+
+
+def _has_name_similarity(c_field: str, p_field: str) -> bool:
+    """Check if two field names share a substring or token overlap."""
+    c_tokens = _tokenize_name(c_field)
+    p_tokens = _tokenize_name(p_field)
+    c_norm = c_field.replace("_", "").replace("-", "").lower()
+    p_norm = p_field.replace("_", "").replace("-", "").lower()
+    if c_norm in p_norm or p_norm in c_norm:
+        return True
+    return bool(c_tokens & p_tokens)
+
+
+def _disambiguate_rename_candidates(c_field: str, candidates: list[str]) -> list[str]:
+    """
+    When multiple producer candidates share the same type, disambiguate using
+    substring match and word token overlap. Returns the subset of highest-scoring candidates.
+    """
+    c_tokens = _tokenize_name(c_field)
+    c_norm = c_field.replace("_", "").replace("-", "").lower()
+
+    scored: list[tuple[int, str]] = []
+    for p in candidates:
+        p_tokens = _tokenize_name(p)
+        p_norm = p.replace("_", "").replace("-", "").lower()
+        score = 0
+        if c_norm in p_norm or p_norm in c_norm:
+            score += 2
+        overlap = c_tokens & p_tokens
+        if overlap:
+            score += len(overlap)
+        if score > 0:
+            scored.append((score, p))
+
+    if not scored:
+        return candidates
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    max_score = scored[0][0]
+    return [p for s, p in scored if s == max_score]
+
+
 # ---------------------------------------------------------------------------
 # Rename detection heuristic
 # ---------------------------------------------------------------------------
@@ -171,7 +221,11 @@ def _detect_renames(
             p for p in producer_new
             if producer_props[p].get("type") == c_type
             and p not in renamed_producer
+            and _has_name_similarity(c_field, p)
         ]
+        if len(candidates) > 1:
+            candidates = _disambiguate_rename_candidates(c_field, candidates)
+
         if len(candidates) == 1:
             p_field = candidates[0]
             findings.append(

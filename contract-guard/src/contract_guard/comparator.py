@@ -68,7 +68,26 @@ class Comparator:
             )
             report.findings.extend(findings)
 
+        # Sort and deduplicate findings while preserving order
         report.findings.sort(key=lambda f: (f.endpoint, f.affected_field, f.change_kind.value))
+
+        # If any field has a FIELD_RENAMED finding, suppress any redundant FIELD_REMOVED for that field
+        renamed_pairs = {
+            (f.endpoint, f.affected_field)
+            for f in report.findings
+            if f.change_kind == ChangeKind.FIELD_RENAMED
+        }
+
+        unique_findings: list[Finding] = []
+        seen = set()
+        for f in report.findings:
+            if f.change_kind == ChangeKind.FIELD_REMOVED and (f.endpoint, f.affected_field) in renamed_pairs:
+                continue
+            key = (f.endpoint, f.affected_field, f.change_kind.value, f.detail)
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+        report.findings = unique_findings
         return report
 
     def _compare_responses(

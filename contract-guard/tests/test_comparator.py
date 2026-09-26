@@ -372,3 +372,158 @@ paths:
         assert len(type_changes) == 1
         assert "id" in type_changes[0].affected_field
 
+
+class TestRenameDeduplicationAndDisambiguation:
+    def test_rename_status_to_payment_status_canonical_single_finding(self, tmp_path):
+        # Producer has customerId (string) and paymentStatus (string)
+        producer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  customerId: { type: string }
+                  paymentStatus: { type: string }
+"""
+        # Consumer only expects id and status (did not consume customerId)
+        consumer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+"""
+        producer = _write_contract(tmp_path, "producer.yaml", producer_yaml)
+        consumer = _write_contract(tmp_path, "consumer.yaml", consumer_yaml)
+        report = Comparator(producer, consumer).compare()
+        assert report.is_compatible is False
+
+        # Must have exactly 1 canonical field_renamed finding
+        rename_findings = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_RENAMED]
+        assert len(rename_findings) == 1
+        assert rename_findings[0].affected_field == "status"
+        assert "paymentStatus" in rename_findings[0].detail
+
+        # Must NOT have field_removed for status
+        removed_findings = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_REMOVED]
+        assert len(removed_findings) == 0
+
+    def test_status_removed_entirely_produces_field_removed(self, tmp_path):
+        # Producer has id (string) and customerId (string), status was removed
+        producer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  customerId: { type: string }
+"""
+        # Consumer expects id and status
+        consumer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+"""
+        producer = _write_contract(tmp_path, "producer.yaml", producer_yaml)
+        consumer = _write_contract(tmp_path, "consumer.yaml", consumer_yaml)
+        report = Comparator(producer, consumer).compare()
+        assert report.is_compatible is False
+
+        # Status must be reported as field_removed, not falsely renamed to customerId
+        removed_findings = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_REMOVED]
+        assert len(removed_findings) == 1
+        assert removed_findings[0].affected_field == "status"
+
+        rename_findings = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_RENAMED]
+        assert len(rename_findings) == 0
+
+    def test_optional_field_added_unchanged(self, tmp_path):
+        producer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+                  bonusField: { type: string }
+"""
+        consumer_yaml = """
+openapi: "3.1.0"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /api/payments/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+"""
+        producer = _write_contract(tmp_path, "producer.yaml", producer_yaml)
+        consumer = _write_contract(tmp_path, "consumer.yaml", consumer_yaml)
+        report = Comparator(producer, consumer).compare()
+        assert report.is_compatible is True
+        opt_findings = [f for f in report.findings if f.change_kind == ChangeKind.FIELD_OPTIONAL_ADDED]
+        assert len(opt_findings) == 1
+        assert opt_findings[0].affected_field == "bonusField"
+

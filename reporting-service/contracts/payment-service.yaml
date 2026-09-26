@@ -29,7 +29,7 @@ components:
       required:
         - id
         - customerId
-        - totalAmount
+        - paymentAmount
         - status
       properties:
         id:
@@ -40,7 +40,7 @@ components:
           type: string
           description: Customer identifier used in reports
           example: CUST-123
-        totalAmount:
+        paymentAmount:
           type: number
           format: double
           description: Payment amount recorded in financial reports

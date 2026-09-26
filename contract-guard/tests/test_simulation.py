@@ -178,7 +178,7 @@ def test_simulation_breaking_rename_no_mutation(clean_workspace: Path):
     assert result.semver["recommendation"] == "MAJOR"
     assert result.direct_consumers == 2
     assert len(result.affected_consumers) == 2
-    assert len(result.findings) == 2
+    assert len(result.findings) == 1
     assert result.findings[0]["change_kind"] == "field_renamed"
 
     # Formats
@@ -319,3 +319,43 @@ def test_mcp_get_blast_radius_simulation(clean_workspace: Path):
     assert res["compatibility"] == "breaking"
     assert res["release_status"] == "BLOCKED"
     assert res["affected_consumers"] == 2
+
+
+def test_simulation_canonical_rename_no_duplicates(clean_workspace: Path):
+    result = simulate_what_if(
+        workspace_root=str(clean_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="paymentAmount",
+        change_kind="field_renamed",
+        new_value="totalAmount",
+        method="GET",
+    )
+
+    assert result.compatibility == "breaking"
+    assert result.status == "BLOCKED"
+    assert len(result.affected_consumers) == 2
+    # Exactly one canonical finding, no duplicate rename findings
+    assert len(result.findings) == 1
+    assert result.findings[0]["change_kind"] == "field_renamed"
+    assert result.findings[0]["affected_field"] == "paymentAmount"
+    # No field_removed finding alongside the rename
+    assert not any(f["change_kind"] == "field_removed" for f in result.findings)
+
+
+def test_simulation_field_removed_entirely(clean_workspace: Path):
+    result = simulate_what_if(
+        workspace_root=str(clean_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="paymentAmount",
+        change_kind="field_removed",
+        method="GET",
+    )
+
+    assert result.compatibility == "breaking"
+    assert result.status == "BLOCKED"
+    assert len(result.affected_consumers) == 2
+    assert len(result.findings) == 1
+    assert result.findings[0]["change_kind"] == "field_removed"
+    assert result.findings[0]["affected_field"] == "paymentAmount"
