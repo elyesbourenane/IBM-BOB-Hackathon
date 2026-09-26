@@ -37,7 +37,9 @@ from .evidence import evaluate_release_gate, generate_evidence
 from .graph import build_dependency_graph
 from .models import ComparisonReport, Finding
 from .mission import generate_repair_mission
+from .passport import generate_change_passport
 from .pr import analyze_pr
+from .simulation import simulate_what_if
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +149,8 @@ TOOL_DEFINITION_BLAST_RADIUS = {
     "description": (
         "Discover consumers and compute deterministic contract blast radius without "
         "invoking external AI services. Returns aggregate summary of affected services, "
-        "contracts, endpoints, fields, and confirmed/likely source and test files."
+        "contracts, endpoints, fields, and confirmed/likely source and test files. "
+        "Can also simulate hypothetical pre-change impact ('what-if') in memory."
     ),
     "inputSchema": {
         "type": "object",
@@ -166,6 +169,34 @@ TOOL_DEFINITION_BLAST_RADIUS = {
                     "Optional. When provided, only dependencies whose service name "
                     "matches this value are checked. Omit to check all dependencies."
                 ),
+            },
+            "simulate": {
+                "type": "boolean",
+                "description": "Optional. Set to true to run a what-if pre-change simulation.",
+            },
+            "change_kind": {
+                "type": "string",
+                "description": "Optional simulation change kind (e.g. field_renamed, field_removed, endpoint_removed, field_added).",
+            },
+            "endpoint": {
+                "type": "string",
+                "description": "Optional simulation endpoint (e.g. 'GET /api/payments/{id}').",
+            },
+            "method": {
+                "type": "string",
+                "description": "Optional simulation HTTP method (e.g. 'GET').",
+            },
+            "field": {
+                "type": "string",
+                "description": "Optional target field name for simulation.",
+            },
+            "new_value": {
+                "type": "string",
+                "description": "Optional new field name or value for simulation.",
+            },
+            "current_version": {
+                "type": "string",
+                "description": "Optional current SemVer baseline (e.g. '1.4.0').",
             },
         },
     },
@@ -283,7 +314,8 @@ TOOL_DEFINITION_REPAIR_MISSION = {
     "description": (
         "Generate a deterministic, machine-readable Repair Mission for IBM Bob when "
         "breaking contract changes are detected across consumers. Describes the semantic "
-        "change, affected consumers, confirmed affected files, required actions, and acceptance criteria."
+        "change, affected consumers, confirmed affected files, required actions, and acceptance criteria. "
+        "Optionally embeds the full Change Passport."
     ),
     "inputSchema": {
         "type": "object",
@@ -301,6 +333,10 @@ TOOL_DEFINITION_REPAIR_MISSION = {
                 "description": (
                     "Optional producer service name filter. Omit to check all dependencies."
                 ),
+            },
+            "include_passport": {
+                "type": "boolean",
+                "description": "Optional. Set to true to embed the full deterministic Change Passport in the response.",
             },
         },
     },
@@ -496,7 +532,8 @@ def _run_discover(arguments: dict[str, Any]) -> dict[str, Any]:
 def _run_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
     """
     Execute the get_blast_radius tool.
-    Computes deterministic blast-radius across all discovered consumers.
+    Computes deterministic blast-radius across all discovered consumers,
+    or runs in-memory what-if simulation if simulate=True or change_kind is provided.
     """
     workspace_root = arguments.get("workspace_root", "")
     if not workspace_root:
@@ -505,6 +542,27 @@ def _run_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
             "isError": True,
         }
     producer_filter: str | None = arguments.get("producer_filter") or None
+
+    if arguments.get("simulate") or arguments.get("change_kind"):
+        try:
+            sim_res = simulate_what_if(
+                workspace_root=workspace_root,
+                producer=arguments.get("producer") or producer_filter or "payment-service",
+                endpoint=arguments.get("endpoint", ""),
+                field=arguments.get("field", ""),
+                change_kind=arguments.get("change_kind", "field_renamed"),
+                new_value=arguments.get("new_value") or arguments.get("new_field") or "",
+                method=arguments.get("method", "GET"),
+                current_version=arguments.get("current_version") or "1.4.0",
+            )
+            return {
+                "content": [{"type": "text", "text": sim_res.to_json()}],
+            }
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Error during what-if simulation: {exc}"}],
+                "isError": True,
+            }
 
     try:
         report = discover_and_check(workspace_root, producer_filter=producer_filter)
@@ -536,6 +594,17 @@ def _run_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],
     }
+
+
+def handle_get_blast_radius(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Direct invocation handler for get_blast_radius tool.
+    Returns the parsed JSON response dict or error response.
+    """
+    res = _run_blast_radius(arguments)
+    if res.get("isError"):
+        return res
+    return json.loads(res["content"][0]["text"])
 
 
 def _run_analyze(
@@ -645,10 +714,17 @@ def _run_verify_release(arguments: dict[str, Any]) -> dict[str, Any]:
             "isError": True,
         }
 
+    try:
+        mission = generate_repair_mission(workspace_root, producer_filter=producer_service)
+        eff_mission_id = mission.mission_id
+    except Exception:
+        eff_mission_id = None
+
     verification = evaluate_release_gate(
         report=report,
         producer_service=producer_service,
         test_results={"status": test_status, "details": f"Automated tests: {test_status}"},
+        mission_id=eff_mission_id,
     )
     evidence = generate_evidence(report, verification, output_dir=output_dir)
 
@@ -657,11 +733,15 @@ def _run_verify_release(arguments: dict[str, Any]) -> dict[str, Any]:
         "is_ready": verification.is_ready,
         "producer_service": verification.producer_service,
         "evidence_id": evidence.evidence_id,
+        "mission_id": verification.mission_id,
         "contract_checks_status": verification.contract_checks_status,
         "breaking_changes_count": verification.breaking_changes_count,
         "consumers_checked": verification.consumers_checked,
         "compatible_consumers": verification.compatible_consumers,
         "affected_consumers": verification.affected_consumers,
+        "remaining_actions": verification.remaining_actions,
+        "remaining_failures": verification.remaining_failures,
+        "next_step": verification.next_step,
         "reasons": verification.reasons,
         "evidence_files": {
             "json": str(Path(output_dir) / "contractguard-evidence.json") if output_dir else None,
@@ -671,6 +751,17 @@ def _run_verify_release(arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],
     }
+
+
+def handle_verify_release(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Direct invocation handler for verify_release_safety tool.
+    Returns the parsed JSON response dict or error response.
+    """
+    res = _run_verify_release(arguments)
+    if res.get("isError"):
+        return res
+    return json.loads(res["content"][0]["text"])
 
 
 def _run_analyze_git_change(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -758,8 +849,16 @@ def _run_repair_mission(arguments: dict[str, Any]) -> dict[str, Any]:
             "isError": True,
         }
 
+    mission_data = mission.to_dict()
+    if arguments.get("include_passport"):
+        try:
+            passport = generate_change_passport(workspace_root, producer_filter=producer_filter)
+            mission_data["change_passport"] = passport.to_dict()
+        except Exception as exc:
+            mission_data["change_passport_error"] = str(exc)
+
     return {
-        "content": [{"type": "text", "text": mission.to_json()}],
+        "content": [{"type": "text", "text": json.dumps(mission_data, indent=2)}],
     }
 
 

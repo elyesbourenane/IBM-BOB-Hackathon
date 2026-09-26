@@ -48,6 +48,10 @@ class ReleaseVerification:
     contract_checks_status: str  # "PASS" | "FAIL"
     test_results: Optional[dict[str, Any]] = None
     reasons: list[str] = field(default_factory=list)
+    mission_id: Optional[str] = None
+    remaining_actions: list[str] = field(default_factory=list)
+    remaining_failures: list[dict[str, Any]] = field(default_factory=list)
+    next_step: str = "release_or_commit"
 
     @property
     def is_ready(self) -> bool:
@@ -67,6 +71,10 @@ class ReleaseVerification:
             "contract_checks_status": self.contract_checks_status,
             "test_results": self.test_results,
             "reasons": self.reasons,
+            "mission_id": self.mission_id,
+            "remaining_actions": list(self.remaining_actions),
+            "remaining_failures": list(self.remaining_failures),
+            "next_step": self.next_step,
         }
 
 
@@ -74,6 +82,7 @@ def evaluate_release_gate(
     report: DiscoveryReport,
     producer_service: str = "payment-service",
     test_results: Optional[dict[str, Any]] = None,
+    mission_id: Optional[str] = None,
 ) -> ReleaseVerification:
     """
     Deterministically evaluate whether an API change is safe for release.
@@ -83,11 +92,34 @@ def evaluate_release_gate(
     breaking_count = len(report.breaking_findings)
     contract_checks_pass = (len(report.affected_consumers) == 0 and breaking_count == 0)
 
+    remaining_actions: list[str] = []
+    remaining_failures: list[dict[str, Any]] = []
+
     if not contract_checks_pass:
         reasons.append(
             f"Downstream API contracts are incompatible: {len(report.affected_consumers)} "
             f"affected consumer(s) with {breaking_count} breaking finding(s)."
         )
+        # Compile precise remaining failures and actions for broken consumers
+        for res in report.results:
+            if not res.is_compatible:
+                for f in res.findings:
+                    if f.is_breaking:
+                        fail_entry = {
+                            "consumer_service": res.consumer_service,
+                            "consumer_contract": res.consumer_contract,
+                            "endpoint": f.endpoint,
+                            "affected_field": f.affected_field,
+                            "change_kind": f.change_kind.value if hasattr(f.change_kind, "value") else str(f.change_kind),
+                            "detail": f.detail,
+                            "reason": f.reason,
+                        }
+                        remaining_failures.append(fail_entry)
+                        act = f"Update {res.consumer_service} consumer contract"
+                        if f.affected_field:
+                            act += f" ({f.affected_field})"
+                        if act not in remaining_actions:
+                            remaining_actions.append(act)
 
     tests_pass = True
     if test_results:
@@ -95,12 +127,16 @@ def evaluate_release_gate(
         if test_status != "PASS":
             tests_pass = False
             reasons.append(f"Automated test suite failed: {test_results.get('detail', 'Tests reported FAIL')}")
+            remaining_actions.append("Fix failing tests and ensure test suite passes PASS")
 
     is_ready = contract_checks_pass and tests_pass
     status = ReleaseStatus.READY if is_ready else ReleaseStatus.BLOCKED
 
     if is_ready:
         reasons.append("All consumer contracts are compatible and all verified tests passed.")
+        next_step = "release_or_commit"
+    else:
+        next_step = "repair_remaining_consumers"
 
     return ReleaseVerification(
         status=status,
@@ -114,6 +150,10 @@ def evaluate_release_gate(
         contract_checks_status="PASS" if contract_checks_pass else "FAIL",
         test_results=test_results,
         reasons=reasons,
+        mission_id=mission_id,
+        remaining_actions=remaining_actions,
+        remaining_failures=remaining_failures,
+        next_step=next_step,
     )
 
 

@@ -739,6 +739,109 @@ TRANSITIVE CONSUMERS
 
 ---
 
+## Phase 3C — Change Passport / Unified Impact Report
+
+Phase 3C unifies everything ContractGuard knows about an API change into a single deterministic, machine-readable artifact: the **Change Passport**.
+
+It answers:
+> **"What exactly changed, what does it affect, what will it require, and what is the current release status?"**
+
+### Passport CLI Commands
+```bash
+# Terminal text output
+contract-guard passport .
+
+# JSON output for agent / automation pipelines
+contract-guard passport . --format json
+
+# Markdown output for PR descriptions or release notes
+contract-guard passport . --format markdown
+```
+
+The Change Passport comports:
+- **Primary Semantic Change**: endpoint, method, change kind, old/new values, compatibility.
+- **Blast Radius**: direct, affected, and contract-only consumers, plus confirmed and likely source/test files.
+- **Dependency Graph**: node and edge topology.
+- **Repair Mission**: structured required actions and acceptance criteria.
+- **SemVer Recommendation**: MAJOR / MINOR / PATCH.
+- **Release Verification**: READY / BLOCKED, breaking findings, and remaining actions.
+- **Deterministic ID**: SHA-256 derived hash ensuring reproducibility across runs.
+
+---
+
+## Phase 3D — What-If / Pre-Change Simulation
+
+Phase 3D allows developers and agents to simulate the impact of hypothetical contract changes in memory **before** editing any code or contracts:
+
+> **"What happens to downstream consumers if I make this API change?"**
+
+### Non-Mutation Invariant
+- **0 file mutations**: Producer and consumer files remain pristine.
+- **0 Git state alterations**: No commits, branches, or index edits.
+- Pure in-memory analysis via schema overlay and deterministic comparator evaluation.
+
+### What-If CLI Commands
+```bash
+# Simulate a breaking field rename
+contract-guard what-if . \
+  --producer payment-service \
+  --endpoint "/api/payments/{id}" \
+  --field paymentAmount \
+  --new-field totalAmount \
+  --change-kind field_renamed
+
+# Simulate a backward-compatible addition
+contract-guard what-if . \
+  --producer payment-service \
+  --endpoint "/api/payments/{id}" \
+  --field bonusField \
+  --change-kind field_optional_added \
+  --format json
+```
+
+---
+
+## Phase 3E & 3F — Bob ↔ ContractGuard Repair / Verify Loop & Failure Retry
+
+ContractGuard formalizes the active collaboration loop between IBM Bob and deterministic verification:
+> **"ContractGuard never modifies code. Bob never declares its own success."**
+
+### The Loop & Retry Workflow
+
+```
+1. ContractGuard detects breaking change & generates Repair Mission
+              ↓
+2. Bob reads Repair Mission & executes repairs
+              ↓
+3. Bob runs consumer automated test suites
+              ↓
+4. Bob requests ContractGuard verification
+              ↓
+   ┌──────────┴──────────┐
+   ▼                     ▼
+[BLOCKED]             [READY]
+Remaining failures    Release approved
+isolated precisely    All consumers compatible
+Bob retries           Next step: release_or_commit
+   │
+   └──────────┐
+              ▼
+   Bob repairs remaining consumer
+              ↓
+   ContractGuard verifies again -> READY
+```
+
+### Verification Response Structure
+When release gate is evaluated via `contract-guard verify . --format json` or the MCP `verify_release_safety` tool:
+- **`status`**: `BLOCKED` or `READY`
+- **`compatible_consumers`**: list of passing consumer services
+- **`affected_consumers`**: list of failing consumer services
+- **`remaining_actions`**: actionable, non-hallucinated steps for Bob
+- **`remaining_failures`**: precise endpoint, field, and contract breakdown of remaining issues
+- **`next_step`**: `"repair_remaining_consumers"` (if blocked) or `"release_or_commit"` (if ready)
+
+---
+
 ## Limitations
 
 ContractGuard maintains strict boundaries and does not claim more than its implementation proves:
@@ -746,13 +849,13 @@ ContractGuard maintains strict boundaries and does not claim more than its imple
 - **Local Git CLI Subprocess**: Operates through the host `git` executable without remote network calls or GitHub/GitLab token authentication.
 - **Shared Workspace Assumption**: Assumes consumer and producer service repositories reside within a shared workspace tree or accessible filesystem.
 - **Contract-Bound Detection**: Scans contract specifications and token occurrences in code; purely internal code refactors without OpenAPI contract modifications cannot be detected statically via schema diffs alone.
-- **Deferred Phase 3 Features**: Event-driven contracts, centralized schema registries, autonomous source patching, and direct PR commenting bots remain deferred.
+- **Autonomous Source Patching**: ContractGuard produces structured deterministic guidance and verification; actual code patching belongs strictly to IBM Bob.
 
 ---
 
 ## Testing
 
-Run the comprehensive test suite (142 passing tests, completely independent of external network or API keys):
+Run the comprehensive test suite (155 passing tests, completely independent of external network or API keys):
 
 ```bash
 pytest
@@ -763,4 +866,4 @@ Run with test coverage report:
 pytest --cov=contract_guard --cov-report=term-missing
 ```
 
-Phase 3B maintains a 100% test passing rate (142 passed, 0 failures, 0 warnings).
+Phase 3F maintains a 100% test passing rate (155 passed, 0 failures, 0 warnings).

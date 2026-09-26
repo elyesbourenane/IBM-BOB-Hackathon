@@ -15,7 +15,9 @@ from .git import inspect_git_status
 from .graph import build_dependency_graph
 from .models import Severity
 from .mission import generate_repair_mission, format_mission_text
+from .passport import generate_change_passport
 from .pr import analyze_pr
+from .simulation import simulate_what_if
 
 # ANSI helpers
 _RED = "\033[31m"
@@ -172,6 +174,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Automated test suite outcome (default: PASS).",
     )
     verify.add_argument(
+        "--format",
+        choices=["text", "json", "markdown"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    verify.add_argument(
         "--no-color",
         action="store_true",
         default=False,
@@ -325,6 +333,107 @@ def _build_parser() -> argparse.ArgumentParser:
         help="File path to write output (e.g. contractguard-mission.json).",
     )
     mission.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 12. passport
+    passport = sub.add_parser(
+        "passport",
+        help="Generate a deterministic Change Passport (unified impact and release report).",
+    )
+    passport.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    passport.add_argument(
+        "--producer",
+        default=None,
+        help="Filter by producer service name.",
+    )
+    passport.add_argument(
+        "--test-status",
+        choices=["PASS", "FAIL"],
+        default="PASS",
+        help="Automated test suite outcome (default: PASS).",
+    )
+    passport.add_argument(
+        "--format",
+        choices=["text", "json", "markdown"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    passport.add_argument(
+        "--output",
+        default=None,
+        help="File path to write output (e.g. contractguard-passport.json).",
+    )
+    passport.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 13. what-if
+    whatif = sub.add_parser(
+        "what-if",
+        help="Simulate a hypothetical contract change in memory without mutating files or Git.",
+    )
+    whatif.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    whatif.add_argument(
+        "--producer",
+        required=True,
+        help="Producer service name being simulated.",
+    )
+    whatif.add_argument(
+        "--endpoint",
+        required=True,
+        help="API endpoint to modify (e.g. 'GET /api/payments/{id}').",
+    )
+    whatif.add_argument(
+        "--change-kind",
+        choices=[
+            "field_renamed",
+            "field_removed",
+            "endpoint_removed",
+            "field_optional_added",
+            "field_required_added",
+        ],
+        required=True,
+        help="Kind of contract change to simulate.",
+    )
+    whatif.add_argument(
+        "--field",
+        default=None,
+        help="Field name being changed or removed.",
+    )
+    whatif.add_argument(
+        "--new-field",
+        default=None,
+        help="New field name for field_renamed, or field for addition.",
+    )
+    whatif.add_argument(
+        "--format",
+        choices=["text", "json", "markdown"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    whatif.add_argument(
+        "--output",
+        default=None,
+        help="File path to write output.",
+    )
+    whatif.add_argument(
         "--no-color",
         action="store_true",
         default=False,
@@ -663,14 +772,76 @@ def cmd_verify(args: argparse.Namespace) -> int:
     nc = args.no_color
     try:
         report = discover_and_check(args.workspace, producer_filter=args.producer)
+        try:
+            mission = generate_repair_mission(args.workspace, producer_filter=args.producer)
+            eff_mission_id = mission.mission_id
+        except Exception:
+            eff_mission_id = None
+
         verification = evaluate_release_gate(
             report,
             producer_service=args.producer,
             test_results={"status": args.test_status, "details": f"Automated tests: {args.test_status}"},
+            mission_id=eff_mission_id,
         )
     except Exception as exc:
         print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
         return 2
+
+    fmt = getattr(args, "format", "text")
+    if fmt == "json":
+        import json
+        payload = {
+            "mission_id": verification.mission_id,
+            "status": verification.status.value,
+            "is_ready": verification.is_ready,
+            "producer_service": verification.producer_service,
+            "contract_checks_status": verification.contract_checks_status,
+            "breaking_changes_count": verification.breaking_changes_count,
+            "consumers_checked": verification.consumers_checked,
+            "compatible_consumers": verification.compatible_consumers,
+            "affected_consumers": verification.affected_consumers,
+            "verification": {
+                "compatible_consumers": len(verification.compatible_consumers),
+                "incompatible_consumers": len(verification.affected_consumers),
+                "breaking_findings": verification.breaking_changes_count,
+            },
+            "remaining_actions": verification.remaining_actions,
+            "remaining_failures": verification.remaining_failures,
+            "next_step": verification.next_step,
+            "reasons": verification.reasons,
+        }
+        print(json.dumps(payload, indent=2))
+        return 0 if verification.is_ready else 1
+
+    if fmt == "markdown":
+        lines = [
+            f"# CONTRACTGUARD VERIFICATION: {verification.status.value}",
+            "",
+            f"**Producer Service:** `{verification.producer_service}`  ",
+            f"**Mission ID:** `{verification.mission_id or 'N/A'}`  ",
+            f"**Status:** **{verification.status.value}**  ",
+            f"**Next Step:** `{verification.next_step}`  ",
+            "",
+            "## Summary",
+            f"- **Consumers Checked:** {len(verification.consumers_checked)}",
+            f"- **Compatible Consumers:** {len(verification.compatible_consumers)}",
+            f"- **Incompatible Consumers:** {len(verification.affected_consumers)}",
+            f"- **Breaking Findings:** {verification.breaking_changes_count}",
+            "",
+        ]
+        if verification.remaining_actions:
+            lines.append("## Remaining Required Actions")
+            for act in verification.remaining_actions:
+                lines.append(f"- [ ] {act}")
+            lines.append("")
+        if verification.remaining_failures:
+            lines.append("## Remaining Breaking Failures")
+            for fail in verification.remaining_failures:
+                lines.append(f"- **{fail.get('consumer_service')}:** {fail.get('detail')} ({fail.get('endpoint')})")
+            lines.append("")
+        print("\n".join(lines))
+        return 0 if verification.is_ready else 1
 
     if verification.status == ReleaseStatus.READY:
         banner = _colorize("[OK] READY FOR RELEASE", _GREEN, _BOLD, no_color=nc)
@@ -678,14 +849,21 @@ def cmd_verify(args: argparse.Namespace) -> int:
         banner = _colorize("[BLOCKED] RELEASE BLOCKED", _RED, _BOLD, no_color=nc)
 
     print(f"\n{banner}\n")
+    if verification.mission_id:
+        print(f"  Mission ID       : {verification.mission_id}")
     print(f"  Producer Service : {verification.producer_service}")
     print(f"  Contract Status  : {verification.contract_checks_status}")
     print(f"  Breaking Changes : {verification.breaking_changes_count}")
     print(f"  Consumers Checked: {len(verification.consumers_checked)}")
     print(f"  Affected         : {len(verification.affected_consumers)}")
+    print(f"  Next Step        : {verification.next_step}")
     print(f"\nReasons:")
     for r in verification.reasons:
         print(f"  - {r}")
+    if verification.remaining_actions:
+        print(f"\nRemaining Actions:")
+        for a in verification.remaining_actions:
+            print(f"  - [ ] {a}")
     print()
 
     return 0 if verification.is_ready else 1
@@ -903,6 +1081,73 @@ def cmd_mission(args: argparse.Namespace) -> int:
     return 0 if mission.status == "READY" else 1
 
 
+def cmd_passport(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    try:
+        passport = generate_change_passport(
+            args.workspace,
+            producer_filter=args.producer,
+            test_status=args.test_status,
+        )
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    if args.format == "json":
+        output = passport.to_json()
+    elif args.format == "markdown":
+        output = passport.to_markdown()
+    else:
+        output = passport.render_text()
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output, encoding="utf-8")
+        if args.format == "text":
+            print(output)
+        print(_colorize(f"\nChange Passport written to: {out_path}", _CYAN, no_color=nc))
+    else:
+        print(output)
+
+    return 0 if passport.verification.get("is_ready") else 1
+
+
+def cmd_whatif(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    try:
+        result = simulate_what_if(
+            workspace_root=args.workspace,
+            producer_service=args.producer,
+            endpoint=args.endpoint,
+            change_kind=args.change_kind,
+            field=args.field,
+            new_field=args.new_field,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(_colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc), file=sys.stderr)
+        return 2
+
+    if args.format == "json":
+        output = result.to_json()
+    elif args.format == "markdown":
+        output = result.to_markdown()
+    else:
+        output = result.render_text()
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output, encoding="utf-8")
+        if args.format == "text":
+            print(output)
+        print(_colorize(f"\nWhat-if simulation written to: {out_path}", _CYAN, no_color=nc))
+    else:
+        print(output)
+
+    return 0 if result.status == "READY" else 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -928,6 +1173,10 @@ def main() -> None:
         sys.exit(cmd_pr(args))
     elif args.command == "mission":
         sys.exit(cmd_mission(args))
+    elif args.command == "passport":
+        sys.exit(cmd_passport(args))
+    elif args.command == "what-if":
+        sys.exit(cmd_whatif(args))
 
 
 if __name__ == "__main__":
