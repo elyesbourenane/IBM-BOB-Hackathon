@@ -27,7 +27,7 @@ public class PaymentDisplayService {
                 payment.getId(),
                 payment.getTotalAmount() != null ? payment.getTotalAmount().toPlainString() : "N/A",
                 payment.getCustomerId(),
-                payment.getStatus()
+                payment.getPaymentStatus()
         );
     }
 }

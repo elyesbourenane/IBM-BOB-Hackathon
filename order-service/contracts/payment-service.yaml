@@ -29,7 +29,7 @@ components:
       required:
         - id
         - paymentAmount
-        - status
+        - paymentStatus
       properties:
         id:
           type: string
@@ -40,7 +40,7 @@ components:
           format: double
           description: Payment amount used to confirm order total
           example: 99.99
-        status:
+        paymentStatus:
           type: string
           description: Payment status used to gate order fulfilment
           enum:

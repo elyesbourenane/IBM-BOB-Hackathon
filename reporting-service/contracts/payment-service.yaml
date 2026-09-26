@@ -30,7 +30,7 @@ components:
         - id
         - customerId
         - paymentAmount
-        - status
+        - paymentStatus
       properties:
         id:
           type: string
@@ -45,7 +45,7 @@ components:
           format: double
           description: Payment amount recorded in financial reports
           example: 250.00
-        status:
+        paymentStatus:
           type: string
           description: Payment status for audit trail
           enum:

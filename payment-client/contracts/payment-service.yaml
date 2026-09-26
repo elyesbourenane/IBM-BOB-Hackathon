@@ -31,7 +31,7 @@ components:
         - id
         - customerId
         - paymentAmount
-        - status
+        - paymentStatus
       properties:
         id:
           type: string
@@ -46,7 +46,7 @@ components:
           format: double
           description: Payment amount
           example: 100.00
-        status:
+        paymentStatus:
           type: string
           description: Payment status
           enum:
