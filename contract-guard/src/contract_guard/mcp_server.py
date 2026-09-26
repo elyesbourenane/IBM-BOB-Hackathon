@@ -35,6 +35,7 @@ from .config import load_config
 from .discovery import discover_and_check, DiscoveryReport, ConsumerResult
 from .evidence import evaluate_release_gate, generate_evidence
 from .models import ComparisonReport, Finding
+from .mission import generate_repair_mission
 from .pr import analyze_pr
 
 
@@ -53,6 +54,7 @@ TOOL_BLAST_RADIUS = "get_blast_radius"
 TOOL_ANALYZE = "analyze_contract_impact"
 TOOL_VERIFY_RELEASE = "verify_release_safety"
 TOOL_GIT_CHANGE = "analyze_git_change"
+TOOL_REPAIR_MISSION = "get_repair_mission"
 
 TOOL_DEFINITION_COMPARE = {
     "name": TOOL_COMPARE,
@@ -269,6 +271,34 @@ TOOL_DEFINITION_GIT_CHANGE = {
                 "type": "string",
                 "description": (
                     "Optional current SemVer baseline (e.g. '1.4.0')."
+                ),
+            },
+        },
+    },
+}
+
+TOOL_DEFINITION_REPAIR_MISSION = {
+    "name": TOOL_REPAIR_MISSION,
+    "description": (
+        "Generate a deterministic, machine-readable Repair Mission for IBM Bob when "
+        "breaking contract changes are detected across consumers. Describes the semantic "
+        "change, affected consumers, confirmed affected files, required actions, and acceptance criteria."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "required": ["workspace_root"],
+        "properties": {
+            "workspace_root": {
+                "type": "string",
+                "description": (
+                    "Absolute or workspace-relative path to the directory to search "
+                    "recursively for contractguard.yaml files."
+                ),
+            },
+            "producer_filter": {
+                "type": "string",
+                "description": (
+                    "Optional producer service name filter. Omit to check all dependencies."
                 ),
             },
         },
@@ -694,6 +724,53 @@ def handle_analyze_git_change(arguments: dict[str, Any]) -> dict[str, Any]:
     return json.loads(res["content"][0]["text"])
 
 
+def _run_repair_mission(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Execute the get_repair_mission tool.
+    Returns a machine-readable Repair Mission for IBM Bob.
+    """
+    workspace_root = arguments.get("workspace_root", "")
+    if not workspace_root:
+        return {
+            "content": [{"type": "text", "text": "Missing required argument: workspace_root"}],
+            "isError": True,
+        }
+    producer_filter: str | None = arguments.get("producer_filter") or None
+
+    try:
+        mission = generate_repair_mission(workspace_root, producer_filter=producer_filter)
+    except FileNotFoundError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Workspace root not found: {exc}"}],
+            "isError": True,
+        }
+    except NotADirectoryError as exc:
+        return {
+            "content": [{"type": "text", "text": f"Not a directory: {exc}"}],
+            "isError": True,
+        }
+    except Exception as exc:  # pragma: no cover
+        return {
+            "content": [{"type": "text", "text": f"Unexpected error during repair mission generation: {exc}"}],
+            "isError": True,
+        }
+
+    return {
+        "content": [{"type": "text", "text": mission.to_json()}],
+    }
+
+
+def handle_get_repair_mission(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Direct invocation handler for get_repair_mission tool.
+    Returns the parsed JSON response dict or error response.
+    """
+    res = _run_repair_mission(arguments)
+    if res.get("isError"):
+        return res
+    return json.loads(res["content"][0]["text"])
+
+
 # ---------------------------------------------------------------------------
 # Request dispatcher
 # ---------------------------------------------------------------------------
@@ -732,6 +809,7 @@ def _dispatch(
                 TOOL_DEFINITION_ANALYZE,
                 TOOL_DEFINITION_VERIFY_RELEASE,
                 TOOL_DEFINITION_GIT_CHANGE,
+                TOOL_DEFINITION_REPAIR_MISSION,
             ]
         })
 
@@ -754,6 +832,8 @@ def _dispatch(
             result = _run_verify_release(arguments)
         elif name == TOOL_GIT_CHANGE:
             result = _run_analyze_git_change(arguments)
+        elif name == TOOL_REPAIR_MISSION:
+            result = _run_repair_mission(arguments)
         else:
             return _error_response(req_id, -32602, f"Unknown tool: {name!r}")
         return _ok_response(req_id, result)

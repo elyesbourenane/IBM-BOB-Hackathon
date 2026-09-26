@@ -13,6 +13,7 @@ from .discovery import discover_and_check
 from .evidence import evaluate_release_gate, generate_evidence, ReleaseStatus
 from .git import inspect_git_status
 from .models import Severity
+from .mission import generate_repair_mission, format_mission_text
 from .pr import analyze_pr
 
 # ANSI helpers
@@ -289,6 +290,40 @@ def _build_parser() -> argparse.ArgumentParser:
         help="File path to write output (e.g. contractguard-pr.md).",
     )
     pr.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False,
+        help="Disable ANSI color output.",
+    )
+
+    # 11. mission
+    mission = sub.add_parser(
+        "mission",
+        help="Generate a deterministic Repair Mission for IBM Bob when breaking contract changes are detected.",
+    )
+    mission.add_argument(
+        "workspace",
+        nargs="?",
+        default=".",
+        help="Workspace root path (default: .).",
+    )
+    mission.add_argument(
+        "--producer",
+        default=None,
+        help="Filter by producer service name.",
+    )
+    mission.add_argument(
+        "--format",
+        choices=["text", "json", "markdown"],
+        default="text",
+        help="Output format (default: text).",
+    )
+    mission.add_argument(
+        "--output",
+        default=None,
+        help="File path to write output (e.g. contractguard-mission.json).",
+    )
+    mission.add_argument(
         "--no-color",
         action="store_true",
         default=False,
@@ -768,6 +803,37 @@ def cmd_pr(args: argparse.Namespace) -> int:
     return 0 if pr_report.is_ready else 1
 
 
+def cmd_mission(args: argparse.Namespace) -> int:
+    nc = args.no_color
+    try:
+        mission = generate_repair_mission(args.workspace, producer_filter=args.producer)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        print(
+            _colorize(f"ERROR: {exc}", _RED, _BOLD, no_color=nc),
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.format == "json":
+        output = mission.to_json()
+    elif args.format == "markdown":
+        output = mission.to_markdown()
+    else:
+        output = format_mission_text(mission, no_color=nc)
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output, encoding="utf-8")
+        if args.format == "text":
+            print(output)
+        print(_colorize(f"\nRepair mission written to: {out_path}", _CYAN, no_color=nc))
+    else:
+        print(output)
+
+    return 0 if mission.status == "READY" else 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -791,6 +857,8 @@ def main() -> None:
         sys.exit(cmd_git_diff(args))
     elif args.command == "pr":
         sys.exit(cmd_pr(args))
+    elif args.command == "mission":
+        sys.exit(cmd_mission(args))
 
 
 if __name__ == "__main__":
