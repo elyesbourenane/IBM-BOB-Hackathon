@@ -57,6 +57,7 @@ components:
         - customerId
         - amount
         - currency
+        - country
       properties:
         customerId:
           type: string
@@ -75,13 +76,17 @@ components:
             - EUR
             - USD
           example: EUR
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: DE
     PaymentResponse:
       type: object
       required:
         - id
         - customerId
         - paymentAmount
-        - paymentStatus
+        - status
       properties:
         id:
           type: string
@@ -96,7 +101,7 @@ components:
           format: double
           description: Payment amount
           example: 150.00
-        paymentStatus:
+        status:
           type: string
           description: Payment status
           enum:

@@ -10,17 +10,17 @@ public class PaymentResponse {
     private String customerId;
     @JsonProperty("totalAmount")
     private BigDecimal totalAmount;
-    @JsonProperty("paymentStatus")
-    private String paymentStatus;
+    @JsonProperty("status")
+    private String status;
 
     public PaymentResponse() {
     }
 
-    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, String paymentStatus) {
+    public PaymentResponse(String id, String customerId, BigDecimal totalAmount, String status) {
         this.id = id;
         this.customerId = customerId;
         this.totalAmount = totalAmount;
-        this.paymentStatus = paymentStatus;
+        this.status = status;
     }
 
     public String getId() {
@@ -47,12 +47,12 @@ public class PaymentResponse {
         this.totalAmount = totalAmount;
     }
 
-    public String getPaymentStatus() {
-        return paymentStatus;
+    public String getStatus() {
+        return status;
     }
 
-    public void setPaymentStatus(String paymentStatus) {
-        this.paymentStatus = paymentStatus;
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     @Override
@@ -63,12 +63,12 @@ public class PaymentResponse {
         return Objects.equals(id, that.id) &&
                 Objects.equals(customerId, that.customerId) &&
                 Objects.equals(totalAmount, that.totalAmount) &&
-                Objects.equals(paymentStatus, that.paymentStatus);
+                Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, customerId, totalAmount, paymentStatus);
+        return Objects.hash(id, customerId, totalAmount, status);
     }
 
     @Override
@@ -77,7 +77,7 @@ public class PaymentResponse {
                 "id='" + id + '\'' +
                 ", customerId='" + customerId + '\'' +
                 ", totalAmount=" + totalAmount +
-                ", paymentStatus='" + paymentStatus + '\'' +
+                ", status='" + status + '\'' +
                 '}';
     }
 }

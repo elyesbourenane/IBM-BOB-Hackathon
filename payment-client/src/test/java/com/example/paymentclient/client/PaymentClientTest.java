@@ -37,7 +37,7 @@ class PaymentClientTest {
                     "id": "PAY-001",
                     "customerId": "CUST-123",
                     "totalAmount": 100.00,
-                    "paymentStatus": "APPROVED"
+                    "status": "APPROVED"
                 }
                 """;
 
@@ -52,7 +52,7 @@ class PaymentClientTest {
         assertEquals("PAY-001", response.getId());
         assertEquals("CUST-123", response.getCustomerId());
         assertEquals(new BigDecimal("100.00"), response.getTotalAmount());
-        assertEquals("APPROVED", response.getPaymentStatus());
+        assertEquals("APPROVED", response.getStatus());
     }
 
     @Test
@@ -63,7 +63,7 @@ class PaymentClientTest {
                     "id": "PAY-002",
                     "customerId": "CUST-456",
                     "totalAmount": 250.00,
-                    "paymentStatus": "PENDING"
+                    "status": "PENDING"
                 }
                 """;
 
