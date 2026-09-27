@@ -1,8 +1,8 @@
 # ContractGuard Release Verification Report
 
-**Verdict:** `[OK] READY FOR RELEASE`  
-**Evidence ID:** `cg-ev-2e641a421c862688`  
-**Timestamp (UTC):** `2026-09-26T10:59:55.763511+00:00`  
+**Verdict:** `[BLOCKED] RELEASE BLOCKED`  
+**Evidence ID:** `cg-ev-fa5d4c4b78232901`  
+**Timestamp (UTC):** `2026-09-27T06:12:25.825025+00:00`  
 **ContractGuard Version:** `0.1.0`  
 
 ---
@@ -11,14 +11,16 @@
 - **Producer Service:** `payment-service`
 - **Workspace Root:** `D:\Code\IBM BOB Hackathon`
 - **Consumers Checked:** 3 (order-service, payment-client, reporting-service)
-- **Compatible Consumers:** 3 (order-service, payment-client, reporting-service)
-- **Affected Consumers:** 0 (None)
+- **Compatible Consumers:** 2 (payment-client, reporting-service)
+- **Affected Consumers:** 1 (order-service)
 
 ## Verdict Reasons
-- All consumer contracts are compatible and all verified tests passed.
+- Downstream API contracts are incompatible: 1 affected consumer(s) with 1 breaking finding(s).
 
-## Contract Differences (0)
-No contract differences detected.
+## Contract Differences (1)
+| Consumer | Endpoint | Field | Change | Severity | Detail |
+|---|---|---|---|---|---|
+| `order-service` | `GET /api/payments/{id}` | `customerId` | `field_required_added` | `breaking` | Field 'customerId' is required in the producer but is absent from the consumer specification. |
 
 ## Automated Tests
 - **Status:** `PASS`

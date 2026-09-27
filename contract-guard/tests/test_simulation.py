@@ -359,3 +359,246 @@ def test_simulation_field_removed_entirely(clean_workspace: Path):
     assert len(result.findings) == 1
     assert result.findings[0]["change_kind"] == "field_removed"
     assert result.findings[0]["affected_field"] == "paymentAmount"
+
+
+@pytest.fixture
+def ref_workspace(tmp_path: Path) -> Path:
+    """
+    Workspace where producer and 3 consumers use $ref schemas for PaymentResponse.
+    Baseline has id: string, status: string.
+    """
+    ws = tmp_path / "ref_ws"
+    ws.mkdir()
+    _init_git(ws)
+
+    # Producer
+    prod_dir = ws / "payment-service" / "docs"
+    prod_dir.mkdir(parents=True)
+    prod_file = prod_dir / "openapi.yaml"
+    prod_file.write_text(
+        textwrap.dedent("""
+        openapi: "3.1.0"
+        info:
+          title: Payment Service
+          version: "1.0.0"
+        paths:
+          /api/payments/{id}:
+            get:
+              responses:
+                "200":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/PaymentResponse"
+        components:
+          schemas:
+            PaymentResponse:
+              type: object
+              required:
+                - id
+                - status
+              properties:
+                id:
+                  type: string
+                status:
+                  type: string
+        """).strip(),
+        encoding="utf-8",
+    )
+
+    # 3 Consumers
+    for name in ["order-service", "payment-client", "reporting-service"]:
+        c_dir = ws / name
+        (c_dir / "contracts").mkdir(parents=True)
+        (c_dir / "contracts" / "payment-service.yaml").write_text(
+            textwrap.dedent("""
+            openapi: "3.1.0"
+            info:
+              title: Payment Service Consumer Contract
+              version: "1.0.0"
+            paths:
+              /api/payments/{id}:
+                get:
+                  responses:
+                    "200":
+                      content:
+                        application/json:
+                          schema:
+                            $ref: "#/components/schemas/PaymentResponse"
+            components:
+              schemas:
+                PaymentResponse:
+                  type: object
+                  required:
+                    - id
+                    - status
+                  properties:
+                    id:
+                      type: string
+                    status:
+                      type: string
+            """).strip(),
+            encoding="utf-8",
+        )
+        (c_dir / "contractguard.yaml").write_text(
+            textwrap.dedent(f"""
+            service: {name}
+            dependencies:
+              - service: payment-service
+                consumer_contract: contracts/payment-service.yaml
+                producer_contract: ../payment-service/docs/openapi.yaml
+            """).strip(),
+            encoding="utf-8",
+        )
+
+    return ws
+
+
+def test_scenario_a_field_renamed(ref_workspace: Path):
+    """Scenario A: status -> paymentStatus flags 3/3 affected consumers with single canonical field_renamed."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="status",
+        new_field="paymentStatus",
+        change_kind="field_renamed",
+        method="GET",
+    )
+
+    assert res.compatibility == "breaking"
+    assert res.status == "BLOCKED"
+    assert len(res.affected_consumers) == 3
+    assert set(res.affected_consumers) == {"order-service", "payment-client", "reporting-service"}
+    assert len(res.findings) == 1
+    assert res.findings[0]["change_kind"] == "field_renamed"
+    assert res.findings[0]["affected_field"] == "status"
+    assert not any(f["change_kind"] == "field_removed" for f in res.findings)
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+
+
+def test_scenario_b_field_removed(ref_workspace: Path):
+    """Scenario B: removal of status flags 3/3 affected consumers with field_removed."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="status",
+        change_kind="field_removed",
+        method="GET",
+    )
+
+    assert res.compatibility == "breaking"
+    assert res.status == "BLOCKED"
+    assert len(res.affected_consumers) == 3
+    assert set(res.affected_consumers) == {"order-service", "payment-client", "reporting-service"}
+    assert len(res.findings) == 1
+    assert res.findings[0]["change_kind"] == "field_removed"
+    assert res.findings[0]["affected_field"] == "status"
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+
+
+def test_scenario_c_required_field_added(ref_workspace: Path):
+    """Scenario C: adding required paymentStatus flags 3/3 affected consumers with field_required_added."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="extraCode",
+        change_kind="field_required_added",
+        method="GET",
+    )
+
+    assert res.compatibility == "breaking"
+    assert res.status == "BLOCKED"
+    assert len(res.affected_consumers) == 3
+    assert set(res.affected_consumers) == {"order-service", "payment-client", "reporting-service"}
+    assert any(f["change_kind"] == "field_required_added" for f in res.findings)
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+
+
+def test_scenario_d_optional_field_added(ref_workspace: Path):
+    """Scenario D: adding optional paymentStatus leaves 3 consumers compatible and 0 affected."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="extraCode",
+        change_kind="field_optional_added",
+        method="GET",
+    )
+
+    assert res.compatibility == "compatible"
+    assert res.status == "READY"
+    assert len(res.affected_consumers) == 0
+    assert len(res.compatible_consumers) == 3
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+
+
+def test_scenario_e_type_changed(ref_workspace: Path):
+    """Scenario E: status string -> integer flags 3/3 affected consumers with field_type_changed."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        field="status",
+        new_value="integer",
+        change_kind="field_type_changed",
+        method="GET",
+    )
+
+    assert res.compatibility == "breaking"
+    assert res.status == "BLOCKED"
+    assert len(res.affected_consumers) == 3
+    assert set(res.affected_consumers) == {"order-service", "payment-client", "reporting-service"}
+    assert any(f["change_kind"] == "field_type_changed" for f in res.findings)
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+
+
+def test_scenario_f_endpoint_removed(ref_workspace: Path):
+    """Scenario F: endpoint removal flags 3/3 affected consumers with endpoint_removed."""
+    prod_path = ref_workspace / "payment-service" / "docs" / "openapi.yaml"
+    before = prod_path.read_text(encoding="utf-8")
+
+    res = simulate_what_if(
+        workspace_root=str(ref_workspace),
+        producer="payment-service",
+        endpoint="/api/payments/{id}",
+        change_kind="endpoint_removed",
+        method="GET",
+    )
+
+    assert res.compatibility == "breaking"
+    assert res.status == "BLOCKED"
+    assert len(res.affected_consumers) == 3
+    assert set(res.affected_consumers) == {"order-service", "payment-client", "reporting-service"}
+    assert any(f["change_kind"] == "endpoint_removed" for f in res.findings)
+
+    # Non-mutating
+    assert prod_path.read_text(encoding="utf-8") == before
+

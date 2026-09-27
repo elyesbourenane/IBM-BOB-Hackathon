@@ -31,7 +31,7 @@ from .impact import (
     scan_consumer_impact,
     summarize_blast_radius,
 )
-from .loader import load_contract
+from .loader import load_contract, resolve_ref, resolve_schema
 from .models import ChangeKind, ComparisonReport, Finding, Severity
 from .versioning import calculate_semver_recommendation, SemVerRecommendation
 
@@ -42,6 +42,8 @@ VALID_CHANGE_KINDS = {
     "endpoint_removed",
     "field_optional_added",
     "field_required_added",
+    "field_type_changed",
+    "type_changed",
 }
 
 
@@ -237,6 +239,7 @@ def _apply_in_memory_change(
     change_kind: str,
     field: Optional[str] = None,
     new_field: Optional[str] = None,
+    new_value: Optional[str] = None,
 ) -> None:
     """Mutate an in-memory OpenAPI dictionary without writing to disk."""
     method_part = ""
@@ -289,6 +292,7 @@ def _apply_in_memory_change(
         schemas_to_visit = []
         for r_code, resp in responses.items():
             if isinstance(resp, dict):
+                resp = _resolve_schema_ref(doc, resp)
                 content = resp.get("content", {})
                 for media, media_obj in content.items():
                     if isinstance(media_obj, dict) and "schema" in media_obj:
@@ -297,6 +301,7 @@ def _apply_in_memory_change(
         # Look in requestBody
         req_body = op.get("requestBody", {})
         if isinstance(req_body, dict):
+            req_body = _resolve_schema_ref(doc, req_body)
             content = req_body.get("content", {})
             for media, media_obj in content.items():
                 if isinstance(media_obj, dict) and "schema" in media_obj:
@@ -304,7 +309,7 @@ def _apply_in_memory_change(
 
         # Apply field changes to discovered schemas
         for s in schemas_to_visit:
-            _modify_schema(doc, s, change_kind, field, new_field)
+            _modify_schema(doc, s, change_kind, field, new_field, new_value)
 
 
 def _resolve_schema_ref(
@@ -315,20 +320,18 @@ def _resolve_schema_ref(
     if not isinstance(schema, dict):
         return schema
 
-    ref = schema.get("$ref")
-    if not isinstance(ref, str):
-        return schema
-
-    prefix = "#/components/schemas/"
-    if not ref.startswith(prefix):
-        return schema
-
-    schema_name = ref[len(prefix):]
-    components = doc.get("components", {})
-    schemas = components.get("schemas", {}) if isinstance(components, dict) else {}
-
-    resolved = schemas.get(schema_name)
-    return resolved if isinstance(resolved, dict) else schema
+    cur = schema
+    depth = 0
+    while isinstance(cur, dict) and "$ref" in cur and depth < 10:
+        ref = cur.get("$ref")
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            break
+        try:
+            cur = resolve_ref(ref, doc)
+        except Exception:
+            break
+        depth += 1
+    return cur if isinstance(cur, dict) else schema
 
 
 def _modify_schema(
@@ -337,6 +340,7 @@ def _modify_schema(
     change_kind: str,
     field: Optional[str],
     new_field: Optional[str],
+    new_value: Optional[str] = None,
 ) -> None:
     """Apply an in-memory change to a resolved OpenAPI schema."""
     if not isinstance(schema, dict):
@@ -344,46 +348,83 @@ def _modify_schema(
 
     schema = _resolve_schema_ref(doc, schema)
 
-    props = schema.get("properties", {})
+    # Recurse into array items if present
+    if schema.get("type") == "array" or "items" in schema:
+        items = schema.get("items")
+        if isinstance(items, dict):
+            _modify_schema(doc, items, change_kind, field, new_field, new_value)
+        return
+
+    # Handle nested dot paths if field is e.g. "user.address.city"
+    target_schema = schema
+    target_field = field
+    target_new_field = new_field
+
+    if target_field and "." in target_field:
+        parts = target_field.split(".")
+        cur = schema
+        for p in parts[:-1]:
+            cur = _resolve_schema_ref(doc, cur)
+            props = cur.get("properties", {})
+            if p not in props or not isinstance(props[p], dict):
+                break
+            cur = _resolve_schema_ref(doc, props[p])
+        else:
+            target_schema = cur
+            target_field = parts[-1]
+            if target_new_field:
+                target_new_field = target_new_field.split(".")[-1]
+
+    props = target_schema.get("properties")
     if not isinstance(props, dict):
         props = {}
-        schema["properties"] = props
+        target_schema["properties"] = props
 
-    reqs = schema.get("required", [])
+    reqs = target_schema.get("required")
     req_set = list(reqs) if isinstance(reqs, list) else []
 
-    if change_kind == "field_renamed" and field and new_field:
-        if field in props:
-            props[new_field] = props.pop(field)
+    if change_kind == "field_renamed" and target_field and target_new_field:
+        if target_field in props:
+            props[target_new_field] = props.pop(target_field)
 
-        if field in req_set:
-            schema["required"] = [
-                new_field if r == field else r
+        if target_field in req_set:
+            target_schema["required"] = [
+                target_new_field if r == target_field else r
                 for r in req_set
             ]
 
-    elif change_kind == "field_removed" and field:
-        if field in props:
-            del props[field]
+    elif change_kind == "field_removed" and target_field:
+        if target_field in props:
+            del props[target_field]
 
-        if field in req_set:
-            schema["required"] = [
-                r for r in req_set if r != field
+        if target_field in req_set:
+            target_schema["required"] = [
+                r for r in req_set if r != target_field
             ]
 
+    elif change_kind in ("field_type_changed", "type_changed") and target_field:
+        tval = target_new_field or new_value or "integer"
+        if target_field in props and isinstance(props[target_field], dict):
+            props[target_field]["type"] = tval
+        else:
+            props[target_field] = {"type": tval}
+
     elif change_kind == "field_optional_added":
-        fname = new_field or field
+        fname = target_new_field or target_field
         if fname:
-            props[fname] = {"type": "string"}
+            if fname not in props:
+                props[fname] = {"type": new_value or "string"}
+            if fname in req_set:
+                target_schema["required"] = [r for r in req_set if r != fname]
 
     elif change_kind == "field_required_added":
-        fname = new_field or field
+        fname = target_new_field or target_field
         if fname:
-            props[fname] = {"type": "string"}
-
+            if fname not in props:
+                props[fname] = {"type": new_value or "string"}
             if fname not in req_set:
                 req_set.append(fname)
-                schema["required"] = req_set
+                target_schema["required"] = req_set
 
 
 def simulate_what_if(
@@ -414,6 +455,8 @@ def simulate_what_if(
     new_field = new_field or new_value
     if change_kind == "field_added":
         change_kind = "field_optional_added"
+    if change_kind == "type_changed":
+        change_kind = "field_type_changed"
 
     if change_kind not in VALID_CHANGE_KINDS:
         raise ValueError(
@@ -425,6 +468,9 @@ def simulate_what_if(
 
     if change_kind in ("field_removed", "field_optional_added", "field_required_added") and not field and not new_field:
         raise ValueError(f"{change_kind} requires --field or --new-field")
+
+    if change_kind == "field_type_changed" and not field:
+        raise ValueError("field_type_changed requires --field")
 
     # 1. Discover all configs in workspace
     config_paths = _find_config_files(ws)
@@ -475,6 +521,7 @@ def simulate_what_if(
         change_kind=change_kind,
         field=field,
         new_field=new_field,
+        new_value=new_value,
     )
 
     # 4. Compare simulated producer doc against each consumer contract in memory
@@ -501,7 +548,7 @@ def simulate_what_if(
                 # In-memory blast-radius file inspection
                 fake_finding = Finding(
                     endpoint=bf.endpoint or endpoint,
-                    affected_field=scan_token,
+                    affected_field=bf.affected_field or scan_token,
                     change_kind=bf.change_kind,
                     detail=bf.detail,
                 )
@@ -530,7 +577,7 @@ def simulate_what_if(
     # Deduplicate findings across consumers to produce canonical breaking findings
     unique_findings_dicts: list[dict[str, Any]] = []
     seen_finding_keys: set[tuple[str, str, str]] = set()
-    renamed_keys: set[tuple[str, str]] = set()
+    renamed_keys: set[tuple[str, str, str]] = set()
 
     for f in all_findings:
         ck = f.change_kind.value if hasattr(f.change_kind, "value") else str(f.change_kind)
@@ -558,7 +605,7 @@ def simulate_what_if(
     findings_dicts = unique_findings_dicts
 
     # If no consumer contract was broken (e.g. producer-only change), determine intrinsic change severity
-    if not findings_dicts and change_kind in ("field_renamed", "field_removed", "endpoint_removed", "field_required_added"):
+    if not findings_dicts and change_kind in ("field_renamed", "field_removed", "endpoint_removed", "field_required_added", "field_type_changed"):
         findings_dicts = [{
             "endpoint": endpoint,
             "affected_field": scan_token,
@@ -599,6 +646,14 @@ def simulate_what_if(
         required_actions = [
             f"Update consumer contract: remove reference to '{field}'",
             "Update consumer models and remove field usage",
+            "Update affected tests if present",
+            "Run consumer tests",
+            "Verify with ContractGuard before releasing",
+        ]
+    elif change_kind == "field_type_changed":
+        required_actions = [
+            f"Update consumer contract: update type for '{field}'",
+            "Update consumer models and deserialization types",
             "Update affected tests if present",
             "Run consumer tests",
             "Verify with ContractGuard before releasing",

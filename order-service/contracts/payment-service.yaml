@@ -28,6 +28,7 @@ components:
       type: object
       required:
         - id
+        - customerId
         - paymentAmount
         - paymentStatus
       properties:
@@ -35,6 +36,10 @@ components:
           type: string
           description: Payment identifier
           example: PAY-001
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST-123
         paymentAmount:
           type: number
           format: double

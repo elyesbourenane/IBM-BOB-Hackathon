@@ -1,10 +1,14 @@
 {
-  "evidence_id": "cg-ev-2e641a421c862688",
+  "evidence_id": "cg-ev-fa5d4c4b78232901",
   "contractguard_version": "0.1.0",
-  "timestamp": "2026-09-26T10:59:55.763511+00:00",
-  "verdict": "READY",
+  "timestamp": "2026-09-27T06:12:25.825025+00:00",
+  "verdict": "BLOCKED",
   "producer_service": "payment-service",
   "workspace_root": "D:\\Code\\IBM BOB Hackathon",
+  "repository_path": null,
+  "commit_sha": null,
+  "base_ref": null,
+  "semver": null,
   "changed_contracts": [
     "D:\\Code\\IBM BOB Hackathon\\payment-service\\docs\\openapi.yaml"
   ],
@@ -14,12 +18,56 @@
     "reporting-service"
   ],
   "compatible_consumers": [
-    "order-service",
     "payment-client",
     "reporting-service"
   ],
-  "affected_consumers": [],
-  "findings": [],
+  "affected_consumers": [
+    "order-service"
+  ],
+  "findings": [
+    {
+      "consumer_service": "order-service",
+      "producer_service": "payment-service",
+      "endpoint": "GET /api/payments/{id}",
+      "affected_field": "customerId",
+      "change_kind": "field_required_added",
+      "severity": "breaking",
+      "detail": "Field 'customerId' is required in the producer but is absent from the consumer specification.",
+      "reason": "Making an optional field required forces consumers to always provide it."
+    }
+  ],
+  "blast_radius_summary": {
+    "affected_services": [
+      "order-service"
+    ],
+    "affected_contracts": [
+      "contracts/payment-service.yaml"
+    ],
+    "affected_endpoints": [
+      "GET /api/payments/{id}"
+    ],
+    "affected_fields": [
+      "customerId"
+    ],
+    "confirmed_source_files": [],
+    "confirmed_test_files": [],
+    "likely_source_files": [],
+    "likely_test_files": [],
+    "direct_consumers": 3,
+    "affected_consumers": 1,
+    "contract_only_consumers": 1,
+    "transitive_consumers": 0,
+    "metrics": {
+      "direct_consumers": 3,
+      "affected_consumers": 1,
+      "contract_only_consumers": 1,
+      "confirmed_source_files": 0,
+      "confirmed_test_files": 0,
+      "likely_source_files": 0,
+      "likely_test_files": 0,
+      "transitive_consumers": 0
+    }
+  },
   "deterministic_checks_performed": [
     "check_removed_fields",
     "check_type_changes",
@@ -34,6 +82,6 @@
     "details": "Automated tests: PASS"
   },
   "reasons": [
-    "All consumer contracts are compatible and all verified tests passed."
+    "Downstream API contracts are incompatible: 1 affected consumer(s) with 1 breaking finding(s)."
   ]
 }

@@ -91,10 +91,22 @@ def check_required_added(
     """
     findings: list[Finding] = []
     for field_path, producer_schema in producer_props.items():
+        p_required = producer_schema.get("_required", False)
         consumer_schema = consumer_props.get(field_path)
         if consumer_schema is None:
-            continue  # new field — handled elsewhere
-        p_required = producer_schema.get("_required", False)
+            if p_required:
+                findings.append(
+                    Finding(
+                        endpoint=endpoint,
+                        affected_field=field_path,
+                        change_kind=ChangeKind.FIELD_REQUIRED_ADDED,
+                        detail=(
+                            f"Field '{field_path}' is required in the producer "
+                            f"but is absent from the consumer specification."
+                        ),
+                    )
+                )
+            continue
         c_required = consumer_schema.get("_required", False)
         if p_required and not c_required:
             findings.append(
