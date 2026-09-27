@@ -10,7 +10,7 @@ public class PaymentResponse {
     private String customerId;
     @JsonProperty("totalAmount")
     private BigDecimal totalAmount;
-    @JsonProperty("status")
+    @JsonProperty("paymentStatus")
     private String status;
 
     public PaymentResponse() {

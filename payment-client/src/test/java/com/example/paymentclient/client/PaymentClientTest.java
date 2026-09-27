@@ -37,7 +37,7 @@ class PaymentClientTest {
                     "id": "PAY-001",
                     "customerId": "CUST-123",
                     "totalAmount": 100.00,
-                    "status": "APPROVED"
+                    "paymentStatus": "APPROVED"
                 }
                 """;
 
@@ -63,7 +63,7 @@ class PaymentClientTest {
                     "id": "PAY-002",
                     "customerId": "CUST-456",
                     "totalAmount": 250.00,
-                    "status": "PENDING"
+                    "paymentStatus": "PENDING"
                 }
                 """;
 

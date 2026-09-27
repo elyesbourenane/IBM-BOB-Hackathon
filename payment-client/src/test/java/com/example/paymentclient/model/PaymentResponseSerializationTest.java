@@ -22,7 +22,7 @@ class PaymentResponseSerializationTest {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
                   "totalAmount": 100.00,
-                  "status": "APPROVED"
+                  "paymentStatus": "APPROVED"
                 }
                 """;
 
@@ -43,7 +43,7 @@ class PaymentResponseSerializationTest {
                   "id": "PAY-001",
                   "customerId": "CUST-123",
                   "totalAmount": 100.00,
-                  "status": "APPROVED"
+                  "paymentStatus": "APPROVED"
                 }
                 """;
 
